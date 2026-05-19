@@ -1,1 +1,1 @@
-# package marker for app
+# app/__init__.py

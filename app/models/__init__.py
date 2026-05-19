@@ -1,3 +1,7 @@
-from ..config.database import Base
+from __future__ import annotations
 
-__all__ = ["Base"]
+from sqlalchemy.orm import DeclarativeBase
+
+
+class Base(DeclarativeBase):
+    pass

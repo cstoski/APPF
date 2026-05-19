@@ -1,14 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
-from ..schemas.sys_schemas import AuthRequest, TokenResponse
-from ..services import seguranca_service
+from __future__ import annotations
 
-router = APIRouter()
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.config.database import get_db
+from app.schemas.sys_schemas import LoginRequest, TokenResponse
+from app.services.seguranca_service import autenticar_usuario, criar_token
+
+router = APIRouter(prefix="/api/v1/auth", tags=["Autenticação"])
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: AuthRequest):
-    # placeholder: in real implementation validate user and password
-    if payload.username == "admin" and payload.password == "admin":
-        token = seguranca_service.create_access_token({"sub": payload.username}, secret="devsecret")
-        return {"access_token": token, "token_type": "bearer"}
-    raise HTTPException(status_code=401, detail="Credenciais inválidas")
+def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    auth = autenticar_usuario(db, payload.username, payload.password)
+    if not auth:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais inválidas.")
+    token = criar_token(auth["username"], auth["perfil"])
+    return TokenResponse(access_token=token)

@@ -1,1 +1,1 @@
-# package marker for app.config
+# app/config/__init__.py

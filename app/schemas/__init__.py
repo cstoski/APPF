@@ -1,1 +1,1 @@
-# package marker for schemas
+# app/schemas/__init__.py
