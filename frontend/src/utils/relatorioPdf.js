@@ -102,21 +102,14 @@ function montarRodapeConteudo(dados, username, tipo) {
       fontSize: 10,
     })
   }
-  blocos.push({
-    text: `Gerado em: ${formatDataGeracao()}${username ? ` — por ${username}` : ''}`,
-    fontSize: 9,
-    color: '#444',
-    margin: [0, 0, 0, 8],
-  })
   return blocos
 }
 
-function montarTabela(linhas, financeiro) {
+function montarTabela(linhas) {
   const ordenadas = ordenarLinhasRelatorio(linhas)
   const header = [
     { text: 'Data', style: 'tableHeader' },
     { text: 'Nº recibo', style: 'tableHeader' },
-    ...(financeiro ? [{ text: 'Contribuinte', style: 'tableHeader' }] : []),
     { text: 'Valor', style: 'tableHeader' },
     { text: 'Forma', style: 'tableHeader' },
   ]
@@ -125,9 +118,6 @@ function montarTabela(linhas, financeiro) {
     const row = [
       { text: formatDataRecebimento(l.data_contribuicao), style: l.cancelado ? 'linhaCancelada' : {} },
       { text: l.numero, style: l.cancelado ? 'linhaCancelada' : {} },
-      ...(financeiro
-        ? [{ text: l.contribuinte_nome || '—', style: l.cancelado ? 'linhaCancelada' : {} }]
-        : []),
       { text: formatValor(l.valor), style: l.cancelado ? 'linhaCancelada' : {} },
       { text: l.forma_pagamento || '—', style: l.cancelado ? 'linhaCancelada' : {} },
     ]
@@ -147,9 +137,7 @@ function montarTabela(linhas, financeiro) {
     ])
   }
 
-  const widths = financeiro
-    ? ['14%', '18%', '21%', '14%', '15%']
-    : ['18%', '18%', '21%', '21%', '22%']
+  const widths = Array(header.length).fill('*')
 
   return {
     table: {
@@ -157,6 +145,7 @@ function montarTabela(linhas, financeiro) {
       widths,
       body: [header, ...body],
     },
+    width: '*',
     layout: {
       hLineWidth: () => 0.5,
       vLineWidth: () => 0.5,
@@ -172,6 +161,67 @@ function montarTabela(linhas, financeiro) {
 }
 
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+/** Largura útil A4 com margens 40pt (centralização do resumo mensal). */
+const LARGURA_UTIL_PDF = 515
+const LARGURA_COLUNA_RESUMO_MENSAL = 100
+const MARGEM_LATERAL_PDF = 40
+/** Altura reservada em pageMargins.bottom — área do rodapé no pdfMake. */
+const ALTURA_RODAPE_PDF = 110
+const ALTURA_LINHA_NUMERO_PAGINA = 18
+
+const LAYOUT_RODAPE_SEM_BORDA = {
+  hLineWidth: () => 0,
+  vLineWidth: () => 0,
+  paddingLeft: () => 0,
+  paddingRight: () => 0,
+  paddingTop: () => 0,
+  paddingBottom: () => 0,
+}
+
+function textoGeracaoRodape(username) {
+  const partes = [{ text: `Gerado em: ${formatDataGeracao()}`, fontSize: 9, color: '#555' }]
+  if (username) {
+    partes.push({ text: ` — por ${username}`, fontSize: 9, color: '#555' })
+  }
+  return partes
+}
+
+function montarRodapePdf(currentPage, pageCount, assinaturas, username) {
+  const alturaSuperior = ALTURA_RODAPE_PDF - ALTURA_LINHA_NUMERO_PAGINA - 15
+  const conteudoSuperior =
+    currentPage === pageCount ? { ...assinaturas } : { text: '' }
+
+  return {
+    margin: [MARGEM_LATERAL_PDF, 0, MARGEM_LATERAL_PDF, 15],
+    table: {
+      widths: ['*'],
+      heights: [alturaSuperior, ALTURA_LINHA_NUMERO_PAGINA],
+      body: [
+        [conteudoSuperior],
+        [
+          {
+            columns: [
+              {
+                width: '*',
+                text: textoGeracaoRodape(username),
+                alignment: 'left',
+              },
+              {
+                width: 'auto',
+                text: `Página ${currentPage} de ${pageCount}`,
+                alignment: 'right',
+                fontSize: 9,
+                color: '#555',
+              },
+            ],
+            valign: 'bottom',
+          },
+        ],
+      ],
+    },
+    layout: LAYOUT_RODAPE_SEM_BORDA,
+  }
+}
 
 function montarSecaoAnualMensal(totaisMensais) {
   if (!totaisMensais?.length) return []
@@ -191,29 +241,41 @@ function montarSecaoAnualMensal(totaisMensais) {
     { text: formatValor(totalVal), alignment: 'right', bold: true, fillColor: '#f0f4f8' },
   ])
 
+  const larguraTabelaMensal = LARGURA_COLUNA_RESUMO_MENSAL * 3
   const tabelaMensal = {
-    table: {
-      headerRows: 1,
-      widths: ['*', '18%', '22%'],
-      body: [
-        [
-          { text: 'Mês', style: 'tableHeader' },
-          { text: 'Quantidade', style: 'tableHeader', alignment: 'center' },
-          { text: 'Valor total', style: 'tableHeader', alignment: 'right' },
-        ],
-        ...body,
-      ],
-    },
-    layout: {
-      hLineWidth: () => 0.5,
-      vLineWidth: () => 0.5,
-      hLineColor: () => '#ccc',
-      vLineColor: () => '#ccc',
-      paddingLeft: () => 6,
-      paddingRight: () => 6,
-      paddingTop: () => 4,
-      paddingBottom: () => 4,
-    },
+    columns: [
+      { width: '*', text: '' },
+      {
+        width: larguraTabelaMensal,
+        table: {
+          headerRows: 1,
+          widths: [
+            LARGURA_COLUNA_RESUMO_MENSAL,
+            LARGURA_COLUNA_RESUMO_MENSAL,
+            LARGURA_COLUNA_RESUMO_MENSAL,
+          ],
+          body: [
+            [
+              { text: 'Mês', style: 'tableHeader', alignment: 'center' },
+              { text: 'Quantidade', style: 'tableHeader', alignment: 'center' },
+              { text: 'Valor total', style: 'tableHeader', alignment: 'center' },
+            ],
+            ...body,
+          ],
+        },
+        layout: {
+          hLineWidth: () => 0.5,
+          vLineWidth: () => 0.5,
+          hLineColor: () => '#ccc',
+          vLineColor: () => '#ccc',
+          paddingLeft: () => 6,
+          paddingRight: () => 6,
+          paddingTop: () => 4,
+          paddingBottom: () => 4,
+        },
+      },
+      { width: '*', text: '' },
+    ],
     margin: [0, 16, 0, 12],
   }
 
@@ -301,37 +363,16 @@ export async function montarDocDefinitionRelatorio(dados, tipo, username) {
 
   return {
     pageSize: 'A4',
-    pageMargins: [40, 40, 40, 110],
+    pageMargins: [MARGEM_LATERAL_PDF, 40, MARGEM_LATERAL_PDF, ALTURA_RODAPE_PDF],
     defaultStyle: { font: 'Roboto', fontSize: 10 },
     content: [
       ...blocos,
-      montarTabela(dados.linhas, financeiro),
+      montarTabela(dados.linhas),
       ...secaoAnual,
       ...rodapeConteudo,
     ],
-    footer: (currentPage, pageCount) => {
-      if (currentPage === pageCount) {
-        return {
-          margin: [40, 0, 40, 20],
-          stack: [
-            { ...assinaturas, margin: [0, 0, 0, 8] },
-            {
-              text: `Página ${currentPage} de ${pageCount}`,
-              alignment: 'center',
-              fontSize: 9,
-              color: '#555',
-            },
-          ],
-        }
-      }
-      return {
-        margin: [40, 0, 40, 20],
-        text: `Página ${currentPage} de ${pageCount}`,
-        alignment: 'center',
-        fontSize: 9,
-        color: '#555',
-      }
-    },
+    footer: (currentPage, pageCount) =>
+      montarRodapePdf(currentPage, pageCount, assinaturas, username),
     styles: {
       tituloInstituicao: { fontSize: 13, bold: true },
       tituloRelatorio: { fontSize: 12, bold: true },

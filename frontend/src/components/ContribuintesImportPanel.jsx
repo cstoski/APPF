@@ -108,7 +108,7 @@ export default function ContribuintesImportPanel({ onApplied, onClose }) {
 
         <p className="text-muted import-guidelines">
           Planilha com colunas: nome_completo (obrigatório), cpf, e-mail e telefone (opcionais).
-          Cadastra novo quando não existir contribuinte ativo com o mesmo nome ou CPF.
+          Permite nomes iguais com CPF diferente. Bloqueia quando o CPF já existir (mesmo nome e mesmo CPF).
         </p>
       </section>
 

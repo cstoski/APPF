@@ -7,7 +7,7 @@ from typing import Tuple, List, Dict, Optional
 import pandas as pd
 import re
 
-from app.services.contribuinte_busca_service import hash_cpf_busca, normalizar_nome_busca
+from app.services.contribuinte_busca_service import hash_cpf_busca
 from app.services.seguranca_service import normalizar_cpf, mascarar_cpf
 
 
@@ -71,27 +71,14 @@ def ler_planilha(file_bytes: bytes, filename: str) -> pd.DataFrame:
     return df
 
 
-def _linha_duplicada_existente(
-    nome: str,
-    cpf: str,
-    cpfs_set: set,
-    nomes_set: set,
-    *,
-    usar_hash_cpf: bool = False,
-) -> bool:
-    nome_norm = normalizar_nome_busca(nome)
+def _cpf_ja_cadastrado(cpf: str, cpfs_set: set, *, usar_hash_cpf: bool = False) -> bool:
     cpf_chave = hash_cpf_busca(cpf) if usar_hash_cpf and cpf else cpf
-    if cpf_chave and cpf_chave in cpfs_set:
-        return True
-    if nome_norm and nome_norm in nomes_set:
-        return True
-    return False
+    return bool(cpf_chave and cpf_chave in cpfs_set)
 
 
 def gerar_preview(
     df: pd.DataFrame,
     cpfs_existentes: List[str],
-    nomes_existentes: List[str],
     *,
     usar_hash_cpf: bool = False,
 ) -> PreviewImportacao:
@@ -100,13 +87,12 @@ def gerar_preview(
     novos = 0
 
     cpfs_set = set(c for c in cpfs_existentes if c)
-    nomes_set = set(n for n in nomes_existentes if n)
 
     for _, row in df.iterrows():
         nome = str(row.get("nome_completo", "")).strip()
         cpf = normalizar_cpf(str(row.get("cpf", "")))
 
-        if _linha_duplicada_existente(nome, cpf, cpfs_set, nomes_set, usar_hash_cpf=usar_hash_cpf):
+        if _cpf_ja_cadastrado(cpf, cpfs_set, usar_hash_cpf=usar_hash_cpf):
             duplicados.append(f"{nome} | {cpf or '(sem CPF)'}")
         else:
             novos += 1
@@ -122,7 +108,6 @@ def gerar_preview(
 def gerar_preview_detalhado(
     df,
     cpfs_existentes,
-    nomes_existentes,
     *,
     usar_hash_cpf: bool = False,
 ):
@@ -131,10 +116,8 @@ def gerar_preview_detalhado(
     exemplos_duplicados = []
 
     cpfs_set = set(c for c in cpfs_existentes if c)
-    nomes_set = set(n for n in nomes_existentes if n)
 
     cpfs_lote: set[str] = set()
-    nomes_lote: set[str] = set()
 
     for offset, (_, row) in enumerate(df.iterrows()):
         linha = offset + 2
@@ -166,16 +149,8 @@ def gerar_preview_detalhado(
             status = "DUP_ARQUIVO"
             sugestao = "PULAR"
             duplicados += 1
-        elif normalizar_nome_busca(nome) in nomes_lote:
-            status = "DUP_ARQUIVO"
-            sugestao = "PULAR"
-            duplicados += 1
-        elif _linha_duplicada_existente(nome, cpf, cpfs_set, nomes_set, usar_hash_cpf=usar_hash_cpf):
-            cpf_chave = hash_cpf_busca(cpf) if usar_hash_cpf and cpf else cpf
-            if cpf_chave and cpf_chave in cpfs_set:
-                status = "DUP_CPF"
-            else:
-                status = "DUP_NOME"
+        elif _cpf_ja_cadastrado(cpf, cpfs_set, usar_hash_cpf=usar_hash_cpf):
+            status = "DUP_CPF"
             sugestao = "PULAR"
             duplicados += 1
         else:
@@ -185,9 +160,6 @@ def gerar_preview_detalhado(
 
         if cpf:
             cpfs_lote.add(hash_cpf_busca(cpf) if usar_hash_cpf else cpf)
-        nome_norm = normalizar_nome_busca(nome)
-        if nome_norm:
-            nomes_lote.add(nome_norm)
 
         itens.append({
             "linha": linha,

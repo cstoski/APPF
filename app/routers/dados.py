@@ -67,9 +67,8 @@ def importar_preview(
     existentes = db.query(Contribuinte).filter(Contribuinte.excluido.is_(False)).all()
 
     cpfs_exist = [c.cpf_busca_hash or "" for c in existentes if c.cpf_busca_hash]
-    nomes_exist = [c.nome_normalizado or normalizar_nome_busca(c.nome_completo) for c in existentes]
 
-    prev = gerar_preview(df, cpfs_exist, nomes_exist, usar_hash_cpf=True)
+    prev = gerar_preview(df, cpfs_exist, usar_hash_cpf=True)
 
     _log_lgpd(
         db,
@@ -105,13 +104,10 @@ def importar_aplicar(
     existentes = db.query(Contribuinte).filter(Contribuinte.excluido.is_(False)).all()
 
     mapa_cpf = {}
-    mapa_nome = {}
 
     for c in existentes:
         if c.cpf_busca_hash:
             mapa_cpf[c.cpf_busca_hash] = c
-        nome_norm = c.nome_normalizado or normalizar_nome_busca(c.nome_completo)
-        mapa_nome[nome_norm] = c
 
     decisoes: dict[int, str] = {}
     if decisoes_json and decisoes_json.strip():
@@ -158,8 +154,6 @@ def importar_aplicar(
 
         if cpf_hash and cpf_hash in mapa_cpf:
             existente = mapa_cpf[cpf_hash]
-        elif nome_norm in mapa_nome:
-            existente = mapa_nome[nome_norm]
 
         acao = decisoes.get(linha)
 
@@ -192,7 +186,6 @@ def importar_aplicar(
             log_inclusao(operador, novo)
             if cpf_hash:
                 mapa_cpf[cpf_hash] = novo
-            mapa_nome[nome_norm] = novo
             importados += 1
             continue
 
@@ -213,7 +206,6 @@ def importar_aplicar(
                 log_inclusao(operador, novo)
                 if cpf_hash:
                     mapa_cpf[cpf_hash] = novo
-                mapa_nome[nome_norm] = novo
                 importados += 1
                 continue
 
@@ -270,9 +262,8 @@ def importar_preview_detalhado(
 
     existentes = db.query(Contribuinte).filter(Contribuinte.excluido.is_(False)).all()
     cpfs_exist = [c.cpf_busca_hash or "" for c in existentes if c.cpf_busca_hash]
-    nomes_exist = [c.nome_normalizado or normalizar_nome_busca(c.nome_completo) for c in existentes]
 
-    payload = gerar_preview_detalhado(df, cpfs_exist, nomes_exist, usar_hash_cpf=True)
+    payload = gerar_preview_detalhado(df, cpfs_exist, usar_hash_cpf=True)
 
     _log_lgpd(
         db,

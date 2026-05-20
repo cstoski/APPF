@@ -156,6 +156,13 @@ def _migrate_contribuintes_busca() -> None:
         )
         conn.execute(
             text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_contribuintes_cpf_busca_ativo "
+                "ON contribuintes (cpf_busca_hash) "
+                "WHERE excluido = 0 AND cpf_busca_hash IS NOT NULL"
+            )
+        )
+        conn.execute(
+            text(
                 "CREATE INDEX IF NOT EXISTS ix_contribuintes_nome_normalizado "
                 "ON contribuintes (nome_normalizado)"
             )

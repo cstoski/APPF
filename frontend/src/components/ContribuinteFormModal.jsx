@@ -145,6 +145,9 @@ export default function ContribuinteFormModal({
                   inputMode="numeric"
                   maxLength={14}
                 />
+                <span className="text-muted" style={{ fontSize: '0.85rem', display: 'block', marginTop: 4 }}>
+                  Mesmo nome com CPF diferente é permitido. Mesmo CPF não pode repetir no cadastro ativo.
+                </span>
               </label>
               <label>
                 E-mail <span className="label-optional">(opcional)</span>

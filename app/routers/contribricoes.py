@@ -155,27 +155,17 @@ def _validar_cpf_unico(db: Session, cpf_norm: str, ignorar_id: int | None = None
     if ignorar_id is not None:
         q = q.filter(Contribuinte.id != ignorar_id)
     if q.first():
-        raise HTTPException(status_code=400, detail="CPF já cadastrado.")
-
-
-def _validar_nome_unico(db: Session, nome: str, ignorar_id: int | None = None) -> None:
-    alvo = normalizar_nome_busca(nome)
-    if not alvo:
-        return
-    q = _apenas_ativos(db.query(Contribuinte)).filter(Contribuinte.nome_normalizado == alvo)
-    if ignorar_id is not None:
-        q = q.filter(Contribuinte.id != ignorar_id)
-    if q.first():
-        raise HTTPException(status_code=400, detail="Nome já cadastrado.")
+        raise HTTPException(
+            status_code=400,
+            detail="Já existe contribuinte ativo com este CPF. Não é permitido cadastrar nome e CPF iguais.",
+        )
 
 
 def _validar_duplicatas_contribuinte(
     db: Session,
-    nome: str,
     cpf: str | None,
     ignorar_id: int | None = None,
 ) -> None:
-    _validar_nome_unico(db, nome, ignorar_id=ignorar_id)
     cpf_norm = normalizar_cpf(cpf or "")
     if cpf_norm:
         if len(cpf_norm) != 11:
@@ -286,7 +276,7 @@ def criar_contribuinte(
             detail="O cadastro exige o consentimento do contribuinte conforme LGPD.",
         )
 
-    _validar_duplicatas_contribuinte(db, data.nome_completo, data.cpf)
+    _validar_duplicatas_contribuinte(db, data.cpf)
 
     c = Contribuinte(consentimento_lgpd=bool(data.consentimento_lgpd), excluido=False)
     _aplicar_dados_contribuinte(c, data)
@@ -316,7 +306,7 @@ def atualizar_contribuinte(
     if not c:
         raise HTTPException(status_code=404, detail="Contribuinte não encontrado.")
 
-    _validar_duplicatas_contribuinte(db, data.nome_completo, data.cpf, ignorar_id=contribuinte_id)
+    _validar_duplicatas_contribuinte(db, data.cpf, ignorar_id=contribuinte_id)
     _aplicar_dados_contribuinte(c, data)
     db.commit()
     db.refresh(c)
