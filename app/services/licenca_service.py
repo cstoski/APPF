@@ -3,8 +3,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import subprocess
 from dataclasses import dataclass
+from functools import lru_cache
 from datetime import date, datetime, timedelta
 from typing import Literal, Optional
 
@@ -53,14 +53,13 @@ class EstadoLicenca:
     demo_consumido: bool = False
 
 
+@lru_cache(maxsize=1)
 def obter_hwid_windows() -> str:
+    """HWID da máquina (calculado uma vez; subprocessos sem janela de console)."""
+    from app.win_subprocess import check_output_oculto
+
     try:
-        out = subprocess.check_output(
-            ["wmic", "csproduct", "get", "uuid"],
-            stderr=subprocess.STDOUT,
-            text=True,
-            shell=False,
-        ).strip()
+        out = check_output_oculto(["wmic", "csproduct", "get", "uuid"]).strip()
         lines = [line.strip() for line in out.splitlines() if line.strip()]
         if len(lines) >= 2 and lines[1]:
             return lines[1]
@@ -68,16 +67,15 @@ def obter_hwid_windows() -> str:
         pass
 
     try:
-        out = subprocess.check_output(
+        out = check_output_oculto(
             [
                 "powershell",
                 "-NoProfile",
+                "-WindowStyle",
+                "Hidden",
                 "-Command",
                 "(Get-CimInstance Win32_ComputerSystemProduct).UUID",
-            ],
-            stderr=subprocess.STDOUT,
-            text=True,
-            shell=False,
+            ]
         ).strip()
         if out:
             return out

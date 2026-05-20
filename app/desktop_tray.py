@@ -1,10 +1,7 @@
 """Bandeja do sistema (Windows) para o executável ZELO."""
 from __future__ import annotations
 
-import json
 import os
-import subprocess
-import tempfile
 import sys
 import threading
 import time
@@ -19,9 +16,6 @@ _abrir_navegador_flag = threading.Event()
 _status_dialog_lock = threading.Lock()
 _host = "127.0.0.1"
 _port = 8765
-
-CREATE_NO_WINDOW = 0x08000000
-
 
 def configurar_desktop_tray(
     *,
@@ -88,62 +82,13 @@ def _texto_status(st: dict) -> str:
     return "\n".join(linhas)
 
 
-def _vbs_quote(texto: str) -> str:
-    return '"' + texto.replace('"', '""') + '"'
-
-
-def _vbs_cstr(texto: str) -> str:
-    linhas = texto.replace("\r", "").split("\n")
-    return " & vbCrLf & ".join(_vbs_quote(linha) for linha in linhas)
-
-
-def _messagebox_ctypes_processo(titulo: str, mensagem: str) -> None:
-    """MessageBoxW em processo filho (desenvolvimento, sem VBScript)."""
-    import multiprocessing as mp
-
-    def _exibir(t: str, m: str) -> None:
+def _messagebox_info(titulo: str, mensagem: str) -> None:
+    """MessageBox nativo (sem wscript/powershell — evita janelas de prompt vazias)."""
+    if sys.platform == "win32":
         import ctypes
 
-        ctypes.windll.user32.MessageBoxW(None, m, t, 0x1040)
-
-    ctx = mp.get_context("spawn")
-    proc = ctx.Process(target=_exibir, args=(titulo, mensagem))
-    proc.start()
-    proc.join(timeout=120)
-
-
-def _messagebox_vbs(titulo: str, mensagem: str) -> None:
-    """MsgBox via wscript em UTF-16 (executavel empacotado)."""
-    vbs = f"MsgBox {_vbs_cstr(mensagem)}, 4160, {_vbs_quote(titulo)}"
-    fd, path = tempfile.mkstemp(suffix=".vbs", prefix="zelo_status_")
-    try:
-        os.write(fd, b"\xff\xfe" + vbs.encode("utf-16-le"))
-        os.close(fd)
-        subprocess.run(
-            ["wscript.exe", "//nologo", path],
-            creationflags=CREATE_NO_WINDOW,
-            timeout=120,
-            check=False,
-        )
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-
-
-def _messagebox_info(titulo: str, mensagem: str) -> None:
-    """
-    Exibe dialogo em processo separado (evita deadlock com o loop da bandeja).
-    """
-    if sys.platform == "win32":
-        if not getattr(sys, "frozen", False):
-            try:
-                _messagebox_ctypes_processo(titulo, mensagem)
-                return
-            except Exception:
-                pass
-        _messagebox_vbs(titulo, mensagem)
+        # MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND
+        ctypes.windll.user32.MessageBoxW(None, mensagem, titulo, 0x1040)
         return
     try:
         import tkinter as tk
