@@ -147,6 +147,9 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Chave de licença local (não versionar)
+tools/license_secret.local
+
 # Environments
 .env
 .envrc

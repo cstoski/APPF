@@ -23,9 +23,11 @@ COLUNAS_ACEITAS = {
     "cpf": ["cpf", "documento", "cpf do contribuinte"],
     "email": ["email", "e-mail"],
     "telefone": ["telefone", "celular", "fone"],
-    "consentimento_lgpd": ["consentimento_lgpd", "consentimento", "lgpd"],
-    "observacoes": ["observacoes", "obs", "observação"],
 }
+
+
+def normalizar_nome(nome: str) -> str:
+    return " ".join(str(nome).strip().split()).casefold()
 
 
 def _mapear_colunas(df: pd.DataFrame) -> pd.DataFrame:
@@ -46,11 +48,8 @@ def _mapear_colunas(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.rename(columns=mapping)
 
-    # Mantém apenas colunas conhecidas
     keep = [c for c in df.columns if c in COLUNAS_ACEITAS.keys()]
-    df = df[keep].copy()
-
-    return df
+    return df[keep].copy() if keep else df.iloc[:, 0:0].copy()
 
 
 def ler_planilha(file_bytes: bytes, filename: str) -> pd.DataFrame:
@@ -65,139 +64,134 @@ def ler_planilha(file_bytes: bytes, filename: str) -> pd.DataFrame:
     df = _mapear_colunas(df)
     df = df.fillna("")
 
-    # Normalizações
     if "cpf" in df.columns:
         df["cpf"] = df["cpf"].astype(str).apply(normalizar_cpf)
-
-    if "consentimento_lgpd" in df.columns:
-        def to_bool(v: str) -> bool:
-            s = str(v).strip().lower()
-            return s in {"1", "true", "sim", "s", "yes", "y", "ok"}
-        df["consentimento_lgpd"] = df["consentimento_lgpd"].apply(to_bool)
 
     return df
 
 
-def gerar_preview(df: pd.DataFrame, cpfs_existentes: List[str], nomes_existentes: List[str]) -> PreviewImportacao:
-    """
-    Duplicidade por CPF (prioritário) ou Nome (fallback).
-    cpfs_existentes aqui são CPFs em texto (já decifrados e normalizados).
-    """
-    total = len(df)
+def _linha_duplicada_existente(
+    nome: str,
+    cpf: str,
+    cpfs_set: set,
+    nomes_set: set,
+) -> bool:
+    nome_norm = normalizar_nome(nome)
+    if cpf and cpf in cpfs_set:
+        return True
+    if nome_norm and nome_norm in nomes_set:
+        return True
+    return False
 
-    duplicados = []
+
+def gerar_preview(df: pd.DataFrame, cpfs_existentes: List[str], nomes_existentes: List[str]) -> PreviewImportacao:
+    total = len(df)
+    duplicados: List[str] = []
     novos = 0
 
+    cpfs_set = set(c for c in cpfs_existentes if c)
+    nomes_set = set(n for n in nomes_existentes if n)
+
     for _, row in df.iterrows():
-        nome = str(row.get("nome_completo", "")).strip().lower()
+        nome = str(row.get("nome_completo", "")).strip()
         cpf = normalizar_cpf(str(row.get("cpf", "")))
-        is_dup = False
 
-        if cpf and cpf in cpfs_existentes:
-            is_dup = True
-        elif nome and nome in nomes_existentes:
-            is_dup = True
-
-        if is_dup:
-            duplicados.append(f"{nome} | {cpf}")
+        if _linha_duplicada_existente(nome, cpf, cpfs_set, nomes_set):
+            duplicados.append(f"{nome} | {cpf or '(sem CPF)'}")
         else:
             novos += 1
 
-    exemplos = duplicados[:10]
     return PreviewImportacao(
         total_linhas=total,
         novos=novos,
         duplicados=len(duplicados),
-        exemplos_duplicados=exemplos,
+        exemplos_duplicados=duplicados[:10],
     )
-    
+
 
 def gerar_preview_detalhado(df, cpfs_existentes, nomes_existentes):
     itens = []
-    novos = duplicados = invalidos = sem_consent = 0
+    novos = duplicados = invalidos = 0
     exemplos_duplicados = []
 
-    cpfs_set = set([c for c in cpfs_existentes if c])
-    nomes_set = set([n for n in nomes_existentes if n])
+    cpfs_set = set(c for c in cpfs_existentes if c)
+    nomes_set = set(n for n in nomes_existentes if n)
 
-    cpfs_lote = set()  # ✅ detectar duplicado dentro do próprio arquivo
+    cpfs_lote: set[str] = set()
+    nomes_lote: set[str] = set()
 
-    for idx, row in df.iterrows():
-        linha = int(idx) + 2
+    for offset, (_, row) in enumerate(df.iterrows()):
+        linha = offset + 2
 
         nome = str(row.get("nome_completo", "")).strip()
         cpf = normalizar_cpf(str(row.get("cpf", "")))
         email = str(row.get("email", "")).strip()
         telefone = str(row.get("telefone", "")).strip()
-        consent = bool(row.get("consentimento_lgpd", False))
 
-        # =========================
-        # VALIDAÇÕES
-        # =========================
         erros = []
 
         if not validar_nome(nome):
-            erros.append("Nome inválido")
+            erros.append("Nome obrigatório (mín. 3 caracteres)")
 
-        if not validar_cpf_simples(cpf):
-            erros.append("CPF inválido")
+        if not validar_cpf_opcional(cpf):
+            erros.append("CPF inválido (use 11 dígitos ou deixe vazio)")
 
         if not validar_email(email):
-            erros.append("Email inválido")
+            erros.append("E-mail inválido")
 
         if not validar_telefone(telefone):
             erros.append("Telefone inválido")
 
-        if not consent:
-            status = "SEM_CONSENTIMENTO"
-            sugestao = "PULAR"
-            sem_consent += 1
-
-        elif erros:
+        if erros:
             status = "INVALIDO"
             sugestao = "PULAR"
             invalidos += 1
-
-        elif cpf in cpfs_lote:
+        elif cpf and cpf in cpfs_lote:
             status = "DUP_ARQUIVO"
             sugestao = "PULAR"
             duplicados += 1
-
-        elif cpf in cpfs_set:
-            status = "DUP_CPF"
+        elif normalizar_nome(nome) in nomes_lote:
+            status = "DUP_ARQUIVO"
             sugestao = "PULAR"
             duplicados += 1
-
-        elif nome.lower() in nomes_set:
-            status = "DUP_NOME"
+        elif _linha_duplicada_existente(nome, cpf, cpfs_set, nomes_set):
+            if cpf and cpf in cpfs_set:
+                status = "DUP_CPF"
+            else:
+                status = "DUP_NOME"
             sugestao = "PULAR"
             duplicados += 1
-
         else:
             status = "NOVO"
             sugestao = "IMPORTAR"
             novos += 1
 
-        cpfs_lote.add(cpf)
+        if cpf:
+            cpfs_lote.add(cpf)
+        nome_norm = normalizar_nome(nome)
+        if nome_norm:
+            nomes_lote.add(nome_norm)
 
         itens.append({
             "linha": linha,
             "nome_completo": nome,
             "cpf": cpf,
+            "email": email,
+            "telefone": telefone,
             "status": status,
             "sugestao_acao": sugestao,
-            "erros": erros,  # ✅ novo
+            "erros": erros,
         })
 
         if "DUP" in status and len(exemplos_duplicados) < 10:
-            exemplos_duplicados.append(f"{nome} | {cpf}")
+            exemplos_duplicados.append(f"{nome} | {cpf or '(sem CPF)'}")
 
     return {
         "total_linhas": len(df),
         "novos": novos,
         "duplicados": duplicados,
         "invalidos": invalidos,
-        "sem_consentimento": sem_consent,
+        "sem_consentimento": 0,
         "exemplos_duplicados": exemplos_duplicados,
         "itens": itens,
     }
@@ -208,14 +202,23 @@ def validar_email(email: str) -> bool:
         return True
     return re.match(r"[^@]+@[^@]+\.[^@]+", email) is not None
 
+
 def validar_telefone(tel: str) -> bool:
     if not tel:
         return True
     return len(re.sub(r"\D", "", tel)) >= 8
 
+
 def validar_nome(nome: str) -> bool:
     return len(nome.strip()) >= 3
 
 
+def validar_cpf_opcional(cpf: str) -> bool:
+    if not cpf:
+        return True
+    return len(cpf) == 11
+
+
+# compatibilidade
 def validar_cpf_simples(cpf: str) -> bool:
-    return len(cpf) >= 11
+    return validar_cpf_opcional(cpf)

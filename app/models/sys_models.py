@@ -59,6 +59,17 @@ class ConfigAPPF(Base, TimestampMixin):
     nome_tesoureiro: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     caminho_assinatura_tesoureiro: Mapped[str] = mapped_column(String(300), nullable=False, default="")
 
+    smtp_host: Mapped[str] = mapped_column(String(200), nullable=False, default="localhost")
+    smtp_porta: Mapped[int] = mapped_column(Integer, nullable=False, default=587)
+    smtp_usuario: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    smtp_senha_cifrada: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    smtp_usar_starttls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    smtp_remetente: Mapped[str] = mapped_column(String(200), nullable=False, default="nao-responder@appf.local")
+
+    @property
+    def smtp_senha_configurada(self) -> bool:
+        return bool(self.smtp_senha_cifrada)
+
 
 class LicencaAtivada(Base, TimestampMixin):
     __tablename__ = "licencas_ativadas"
@@ -73,6 +84,22 @@ class LicencaAtivada(Base, TimestampMixin):
     assinatura: Mapped[str] = mapped_column(String(512), nullable=False)
     ativa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     data_ativacao: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    data_expiracao: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    data_emissao_serial: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    tipo_licenca: Mapped[str] = mapped_column(String(20), nullable=False, default="PRODUCAO")
+    demo_consumido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class LicencaEvento(Base, TimestampMixin):
+    __tablename__ = "licenca_eventos"
+    __table_args__ = (Index("ix_licenca_evento_hwid", "hwid"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    hwid: Mapped[str] = mapped_column(String(200), nullable=False)
+    operador_username: Mapped[str] = mapped_column(String(80), nullable=False)
+    acao: Mapped[str] = mapped_column(String(40), nullable=False)
+    serial_mascarado: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    detalhes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class LogsAuditoriaLGPD(Base, TimestampMixin):

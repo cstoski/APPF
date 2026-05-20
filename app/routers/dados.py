@@ -5,15 +5,21 @@ from typing import List
 import json
 
 import pandas as pd
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
 from app.config.database import get_db
-from app.models.core_models import Contribuinte, Aluno, AlunoResponsavel, Recibo
+from app.models.core_models import Contribuinte, Recibo
 from app.models.sys_models import LogsAuditoriaLGPD
 from app.schemas.core_schemas import ImportacaoPreviewOut, ExportacaoOut, ImportacaoPreviewDetalhadoOut
-from app.services.importacao_service import ler_planilha, gerar_preview, gerar_preview_detalhado
+from app.services.importacao_service import (
+    ler_planilha,
+    gerar_preview,
+    gerar_preview_detalhado,
+    normalizar_nome,
+)
+from app.services.contribuinte_log_service import log_inclusao, log_alteracao
 from app.services.seguranca_service import (
     decifrar,
     normalizar_cpf,
@@ -21,7 +27,7 @@ from app.services.seguranca_service import (
     get_current_username,
     cifrar,
 )
-from app.services.licenca_service import require_licenca
+from app.services.licenca_service import require_licenca, require_licenca_escrita
 
 router = APIRouter(prefix="/api/v1/dados", tags=["Importação/Exportação"])
 
@@ -48,7 +54,7 @@ def _log_lgpd(
 # ==========================================================
 # PREVIEW
 # ==========================================================
-@router.post("/importar/preview", response_model=ImportacaoPreviewOut, dependencies=[Depends(require_licenca)])
+@router.post("/importar/preview", response_model=ImportacaoPreviewOut, dependencies=[Depends(require_licenca_escrita)])
 def importar_preview(
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -57,14 +63,14 @@ def importar_preview(
     b = arquivo.file.read()
     df = ler_planilha(b, arquivo.filename or "arquivo.xlsx")
 
-    existentes = db.query(Contribuinte).all()
+    existentes = db.query(Contribuinte).filter(Contribuinte.excluido.is_(False)).all()
 
     cpfs_exist = []
     nomes_exist = []
 
     for c in existentes:
         cpfs_exist.append(normalizar_cpf(decifrar(c.cpf_cifrado) or ""))
-        nomes_exist.append(c.nome_completo.strip().lower())
+        nomes_exist.append(normalizar_nome(c.nome_completo))
 
     prev = gerar_preview(df, cpfs_exist, nomes_exist)
 
@@ -88,18 +94,18 @@ def importar_preview(
 # ==========================================================
 # ✅ APLICAR (PASSO 2 COMPLETO)
 # ==========================================================
-@router.post("/importar/aplicar", dependencies=[Depends(require_licenca)])
+@router.post("/importar/aplicar", dependencies=[Depends(require_licenca_escrita)])
 def importar_aplicar(
     arquivo: UploadFile = File(...),
-    modo_duplicados: str = "PULAR",  # PULAR | ATUALIZAR
-    decisoes_json: str | None = None,
+    modo_duplicados: str = Form(default="PULAR"),
+    decisoes_json: str | None = Form(default=None),
     db: Session = Depends(get_db),
     operador: str = Depends(get_current_username),
 ):
     b = arquivo.file.read()
     df = ler_planilha(b, arquivo.filename or "arquivo.xlsx")
 
-    existentes = db.query(Contribuinte).all()
+    existentes = db.query(Contribuinte).filter(Contribuinte.excluido.is_(False)).all()
 
     mapa_cpf = {}
     mapa_nome = {}
@@ -109,58 +115,62 @@ def importar_aplicar(
         if cpf_dec:
             mapa_cpf[cpf_dec] = c
 
-        nome_norm = c.nome_completo.strip().lower()
+        nome_norm = normalizar_nome(c.nome_completo)
         mapa_nome[nome_norm] = c
 
-    decisoes = {}
-    if decisoes_json:
+    decisoes: dict[int, str] = {}
+    if decisoes_json and decisoes_json.strip():
         try:
             raw = json.loads(decisoes_json)
+            if not isinstance(raw, list):
+                raise ValueError("decisoes_json deve ser uma lista")
             for d in raw:
                 linha = int(d["linha"])
-                decisoes[linha] = d["acao"]
-        except Exception:
-            raise HTTPException(status_code=400, detail="decisoes_json inválido")
+                acao = str(d.get("acao", "")).strip().upper()
+                if acao in ("INCLUIR",):
+                    acao = "IMPORTAR"
+                if acao in ("IGNORAR",):
+                    acao = "PULAR"
+                decisoes[linha] = acao
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"decisoes_json inválido: {exc}",
+            ) from exc
 
     importados = 0
     atualizados = 0
     pulados = 0
-    sem_consentimento = 0
 
-    for idx, row in df.iterrows():
-        linha = idx + 2
+    for offset, (_, row) in enumerate(df.iterrows()):
+        linha = offset + 2
 
         nome = str(row.get("nome_completo", "")).strip()
         cpf = normalizar_cpf(str(row.get("cpf", "")))
         email = str(row.get("email", "")).strip()
         telefone = str(row.get("telefone", "")).strip()
-        observacoes = str(row.get("observacoes", "")).strip()
-        consentimento = bool(row.get("consentimento_lgpd", False))
 
-        if not consentimento:
-            sem_consentimento += 1
+        if len(nome) < 3:
+            pulados += 1
+            continue
+        if cpf and len(cpf) != 11:
+            pulados += 1
             continue
 
+        nome_norm = normalizar_nome(nome)
         existente = None
 
         if cpf and cpf in mapa_cpf:
             existente = mapa_cpf[cpf]
-            status = "DUP_CPF"
-        elif nome.lower() in mapa_nome:
-            existente = mapa_nome[nome.lower()]
-            status = "DUP_NOME"
-        else:
-            status = "NOVO"
+        elif nome_norm in mapa_nome:
+            existente = mapa_nome[nome_norm]
 
         acao = decisoes.get(linha)
 
         if not acao:
-            if status == "NOVO":
-                acao = "IMPORTAR"
-            else:
-                acao = "ATUALIZAR" if modo_duplicados == "ATUALIZAR" else "PULAR"
-
-        # ===== EXECUÇÃO =====
+            acao = "IMPORTAR" if not existente else (
+                "ATUALIZAR" if modo_duplicados == "ATUALIZAR" else "PULAR"
+            )
 
         if acao == "PULAR":
             pulados += 1
@@ -173,13 +183,18 @@ def importar_aplicar(
 
             novo = Contribuinte(
                 nome_completo=nome,
-                cpf_cifrado=cifrar(cpf),
+                cpf_cifrado=cifrar(cpf) if cpf else None,
                 email_cifrado=cifrar(email) if email else None,
                 telefone_cifrado=cifrar(telefone) if telefone else None,
                 consentimento_lgpd=True,
-                observacoes=observacoes or None,
+                excluido=False,
             )
             db.add(novo)
+            db.flush()
+            log_inclusao(operador, novo)
+            if cpf:
+                mapa_cpf[cpf] = novo
+            mapa_nome[nome_norm] = novo
             importados += 1
             continue
 
@@ -187,25 +202,35 @@ def importar_aplicar(
             if not existente:
                 novo = Contribuinte(
                     nome_completo=nome,
-                    cpf_cifrado=cifrar(cpf),
+                    cpf_cifrado=cifrar(cpf) if cpf else None,
                     email_cifrado=cifrar(email) if email else None,
                     telefone_cifrado=cifrar(telefone) if telefone else None,
                     consentimento_lgpd=True,
+                    excluido=False,
                 )
                 db.add(novo)
+                db.flush()
+                log_inclusao(operador, novo)
+                if cpf:
+                    mapa_cpf[cpf] = novo
+                mapa_nome[nome_norm] = novo
                 importados += 1
                 continue
 
             existente.nome_completo = nome
-
+            if cpf:
+                existente.cpf_cifrado = cifrar(cpf)
             if email:
                 existente.email_cifrado = cifrar(email)
+            elif email == "":
+                existente.email_cifrado = None
             if telefone:
                 existente.telefone_cifrado = cifrar(telefone)
-            if observacoes:
-                existente.observacoes = observacoes
+            elif telefone == "":
+                existente.telefone_cifrado = None
 
-            existente.consentimento_lgpd = True
+            db.flush()
+            log_alteracao(operador, existente)
             atualizados += 1
             continue
 
@@ -224,14 +249,14 @@ def importar_aplicar(
         "importados": importados,
         "atualizados": atualizados,
         "pulados": pulados,
-        "sem_consentimento": sem_consentimento,
+        "sem_consentimento": 0,
     }
 
 
 @router.post(
     "/importar/preview-detalhado",
     response_model=ImportacaoPreviewDetalhadoOut,
-    dependencies=[Depends(require_licenca)],
+    dependencies=[Depends(require_licenca_escrita)],
 )
 def importar_preview_detalhado(
     arquivo: UploadFile = File(...),
@@ -241,13 +266,13 @@ def importar_preview_detalhado(
     b = arquivo.file.read()
     df = ler_planilha(b, arquivo.filename or "arquivo.xlsx")
 
-    existentes = db.query(Contribuinte).all()
+    existentes = db.query(Contribuinte).filter(Contribuinte.excluido.is_(False)).all()
     cpfs_exist = []
     nomes_exist = []
 
     for c in existentes:
         cpfs_exist.append(normalizar_cpf(decifrar(c.cpf_cifrado) or ""))
-        nomes_exist.append(c.nome_completo.strip().lower())
+        nomes_exist.append(normalizar_nome(c.nome_completo))
 
     payload = gerar_preview_detalhado(df, cpfs_exist, nomes_exist)
 
@@ -271,7 +296,12 @@ def exportar_contribuintes(
     db: Session = Depends(get_db),
     operador: str = Depends(get_current_username),
 ):
-    contribs = db.query(Contribuinte).order_by(Contribuinte.id.asc()).all()
+    contribs = (
+        db.query(Contribuinte)
+        .filter(Contribuinte.excluido.is_(False))
+        .order_by(Contribuinte.id.asc())
+        .all()
+    )
 
     _log_lgpd(
         db,

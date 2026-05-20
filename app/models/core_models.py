@@ -37,7 +37,7 @@ class Contribuinte(Base, TimestampMixin):
     nome_completo: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
 
     # Dados sensíveis cifrados (LGPD)
-    cpf_cifrado: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    cpf_cifrado: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, unique=True)
     email_cifrado: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     telefone_cifrado: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
@@ -45,48 +45,11 @@ class Contribuinte(Base, TimestampMixin):
 
     observacoes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
+    excluido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+
     recibos: Mapped[List["Recibo"]] = relationship(
         back_populates="contribuinte", cascade="save-update"
     )
-
-    alunos_responsabilidades: Mapped[List["AlunoResponsavel"]] = relationship(
-        back_populates="contribuinte", cascade="all, delete-orphan"
-    )
-
-
-class Aluno(Base, TimestampMixin):
-    __tablename__ = "alunos"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    nome_completo: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
-    turma: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    matricula: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
-
-    responsaveis: Mapped[List["AlunoResponsavel"]] = relationship(
-        back_populates="aluno", cascade="all, delete-orphan"
-    )
-
-
-class AlunoResponsavel(Base, TimestampMixin):
-    """
-    Tabela N:N com timestamps (não usar Table pura, pois precisa de data_criacao/data_alteracao).
-    """
-    __tablename__ = "alunos_responsaveis"
-    __table_args__ = (
-        UniqueConstraint("aluno_id", "contribuinte_id", name="uq_aluno_contribuinte"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-
-    aluno_id: Mapped[int] = mapped_column(ForeignKey("alunos.id"), nullable=False, index=True)
-    contribuinte_id: Mapped[int] = mapped_column(
-        ForeignKey("contribuintes.id"), nullable=False, index=True
-    )
-
-    parentesco: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-
-    aluno: Mapped["Aluno"] = relationship(back_populates="responsaveis")
-    contribuinte: Mapped["Contribuinte"] = relationship(back_populates="alunos_responsabilidades")
 
 
 class Recibo(Base, TimestampMixin):
@@ -110,7 +73,10 @@ class Recibo(Base, TimestampMixin):
     forma_pagamento: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     descricao: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 
-    # Congelamento histórico de gestão
+    # Congelamento histórico da instituição e gestão
+    razao_social: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    cnpj: Mapped[str] = mapped_column(String(30), nullable=False, default="")
+    endereco: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     nome_presidente: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     nome_tesoureiro: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     caminho_assinatura_presidente: Mapped[str] = mapped_column(String(300), nullable=False, default="")

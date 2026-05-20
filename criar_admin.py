@@ -7,7 +7,8 @@ db = SessionLocal()
 admin = Usuario(
     username="admin",
     senha_hash=gerar_hash_senha("admin_password_appf"),
-    ativo=True
+    perfil="MASTER",
+    ativo=True,
 )
 
 db.add(admin)

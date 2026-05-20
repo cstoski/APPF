@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../hooks/useAuth.jsx'
 import { authService } from '../services/api'
+import { formatApiError } from '../utils/formatApiError'
 import '../styles/login.css'
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('admin')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,9 +22,9 @@ export default function LoginPage() {
       const response = await authService.login(username, password)
       const token = response.data.access_token
       login(token, username)
-      navigate('/dashboard')
+      navigate('/dashboard', { replace: true })
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erro ao fazer login')
+      setError(formatApiError(err, 'Erro ao fazer login. Verifique se o backend está rodando.'))
     } finally {
       setLoading(false)
     }
@@ -32,17 +33,18 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-panel card card-strong">
-        <div className="login-banner">
-          <div>
-            <h1>APPF</h1>
-            <p>Login seguro para gerenciar importações aprovadas.</p>
+        <div className="login-brand">
+          <div className="login-logo-frame">
+            <img src="/images/zelo-appf.png" alt="Zelo APPF" className="login-logo" />
           </div>
+          <p className="login-brand-lead">
+            Sistema de Gestão de Contribuições Voluntárias APPF
+          </p>
         </div>
 
         <div className="login-body">
           <div className="login-title">
-            <h2>Bem-vindo de volta</h2>
-            <p>Entre para continuar e acessar o painel de importação.</p>
+            <h2>Acesso ao sistema</h2>
           </div>
 
           <form onSubmit={handleSubmit} className="login-form">
@@ -52,8 +54,9 @@ export default function LoginPage() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="admin"
+              placeholder="Informe seu usuário"
               disabled={loading}
+              autoComplete="username"
             />
 
             <label htmlFor="password">Senha</label>
@@ -76,11 +79,6 @@ export default function LoginPage() {
               {loading ? 'Autenticando...' : 'Entrar'}
             </button>
           </form>
-
-          <div className="login-tips">
-            <p>Use o usuário `admin` com a senha cadastrada no sistema.</p>
-            <p>O token é armazenado apenas nesta sessão.</p>
-          </div>
         </div>
       </div>
     </div>
