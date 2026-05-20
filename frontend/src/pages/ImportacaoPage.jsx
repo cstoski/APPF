@@ -39,11 +39,16 @@ export default function ImportacaoPage() {
   }
 
   const handleApply = async (decisoes) => {
+    if (!file) {
+      setError('Arquivo não encontrado para aplicar a importação')
+      return
+    }
+
     setLoading(true)
     setError('')
 
     try {
-      const response = await importService.aplicarDecisoes(decisoes, modo)
+      const response = await importService.aplicarDecisoes(file, decisoes, modo)
       alert(`✅ Importação concluída:\n${JSON.stringify(response.data, null, 2)}`)
       setFile(null)
       setPreview(null)
@@ -56,15 +61,24 @@ export default function ImportacaoPage() {
 
   return (
     <div className="importacao">
-      <div className="importacao-header">
-        <h2>Importação de Contribuintes</h2>
-        <p>Selecione um arquivo Excel para visualizar e importar</p>
+      <div className="importacao-header section-header">
+        <div>
+          <h2 className="page-title">Importação de Contribuintes</h2>
+          <p className="page-description">Carregue seu arquivo para gerar preview, revisar por linha e aplicar a importação com segurança.</p>
+        </div>
+
+        <div className="import-summary-tags">
+          <span className="tag">LGPD</span>
+          <span className="tag">Preview</span>
+          <span className="tag">Decisão por linha</span>
+        </div>
       </div>
 
-      <div className="importacao-section">
+      <div className="importacao-section card card-strong">
         <div className="file-upload-box">
           <label htmlFor="file-input" className="file-label">
-            📁 Selecione um arquivo Excel (.xlsx, .xls, .csv)
+            <span>📁 Arraste ou selecione o arquivo</span>
+            <small>.xlsx, .xls ou .csv</small>
           </label>
           <input
             id="file-input"
@@ -73,18 +87,22 @@ export default function ImportacaoPage() {
             accept=".xlsx,.xls,.csv"
             disabled={loading}
           />
-          {file && (
-            <div className="file-selected">
-              ✅ {file.name}
-            </div>
-          )}
         </div>
+
+        {file && (
+          <div className="file-selected card-strong">
+            <div>
+              <strong>Arquivo selecionado:</strong>
+              <p>{file.name}</p>
+            </div>
+          </div>
+        )}
 
         {error && <div className="alert alert-error">{error}</div>}
 
         <div className="import-controls">
           <div className="control-group">
-            <label htmlFor="modo">Modo de importação:</label>
+            <label htmlFor="modo">Modo de importação</label>
             <select
               id="modo"
               value={modo}
@@ -98,12 +116,16 @@ export default function ImportacaoPage() {
           </div>
 
           <button
-            className="btn btn-primary"
+            className="btn btn-primary btn-lg"
             onClick={handlePreview}
             disabled={!file || loading}
           >
-            {loading ? '⏳ Processando...' : '👁️ Visualizar'}
+            {loading ? '⏳ Gerando preview...' : '👁️ Gerar preview'}
           </button>
+        </div>
+
+        <div className="import-guidelines">
+          <p><strong>Dica:</strong> revise o preview antes de aplicar. Linhas sem LGPD serão destacadas.</p>
         </div>
       </div>
 

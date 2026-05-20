@@ -30,15 +30,22 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="login-container">
-      <div className="login-card">
-        <div className="login-header">
-          <h1>📋 APPF</h1>
-          <p>Importação com Aprovação</p>
+    <div className="login-page">
+      <div className="login-panel card card-strong">
+        <div className="login-banner">
+          <div>
+            <h1>APPF</h1>
+            <p>Login seguro para gerenciar importações aprovadas.</p>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="login-form">
-          <div className="form-group">
+        <div className="login-body">
+          <div className="login-title">
+            <h2>Bem-vindo de volta</h2>
+            <p>Entre para continuar e acessar o painel de importação.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="login-form">
             <label htmlFor="username">Usuário</label>
             <input
               id="username"
@@ -48,34 +55,32 @@ export default function LoginPage() {
               placeholder="admin"
               disabled={loading}
             />
-          </div>
 
-          <div className="form-group">
             <label htmlFor="password">Senha</label>
             <input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Digite sua senha"
+              placeholder="••••••••"
               disabled={loading}
             />
+
+            {error && <div className="alert alert-error">{error}</div>}
+
+            <button
+              type="submit"
+              className="btn btn-primary btn-block"
+              disabled={loading}
+            >
+              {loading ? 'Autenticando...' : 'Entrar'}
+            </button>
+          </form>
+
+          <div className="login-tips">
+            <p>Use o usuário `admin` com a senha cadastrada no sistema.</p>
+            <p>O token é armazenado apenas nesta sessão.</p>
           </div>
-
-          {error && <div className="alert alert-error">{error}</div>}
-
-          <button
-            type="submit"
-            className="btn btn-primary btn-block"
-            disabled={loading}
-          >
-            {loading ? 'Autenticando...' : 'Entrar'}
-          </button>
-        </form>
-
-        <div className="login-footer">
-          <p>🔒 Autenticação segura com JWT</p>
-          <p>📍 Token armazenado em sessionStorage</p>
         </div>
       </div>
     </div>

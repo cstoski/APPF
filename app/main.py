@@ -47,6 +47,11 @@ app.include_router(dados_router)
 app.include_router(sistema_router)
 
 
+@app.get('/ping')
+def ping() -> dict[str, str]:
+    return {'status': 'ok'}
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()

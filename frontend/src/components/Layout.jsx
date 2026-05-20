@@ -16,7 +16,9 @@ export default function Layout() {
     <div className="layout">
       <Navbar username={username} onLogout={handleLogout} />
       <main className="main-content">
-        <Outlet />
+        <div className="content-wrapper">
+          <Outlet />
+        </div>
       </main>
     </div>
   )

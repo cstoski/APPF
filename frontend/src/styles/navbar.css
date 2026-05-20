@@ -2,48 +2,66 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1.5rem;
   padding: 1rem 2rem;
-  background-color: var(--bg);
-  box-shadow: var(--shadow);
-  border-bottom: 2px solid var(--primary);
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .navbar-brand {
   display: flex;
   align-items: center;
   gap: 1rem;
-  flex: 1;
+  min-width: 240px;
+}
+
+.brand-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1.1rem;
+  box-shadow: var(--shadow);
 }
 
 .navbar-brand h1 {
-  font-size: 1.5rem;
+  font-size: 1rem;
   margin: 0;
-  color: var(--primary);
+  color: var(--dark);
 }
 
 .navbar-brand p {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   color: var(--secondary);
 }
 
 .navbar-links {
   display: flex;
-  gap: 2rem;
+  gap: 1rem;
   flex: 1;
   justify-content: center;
 }
 
 .navbar-links a {
-  color: var(--text);
-  font-weight: 500;
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius);
-  transition: all 0.2s;
+  color: var(--secondary);
+  font-weight: 600;
+  padding: 0.75rem 1.1rem;
+  border-radius: 999px;
+  transition: all 0.2s ease;
 }
 
-.navbar-links a:hover {
-  background-color: var(--light);
+.navbar-links a:hover,
+.navbar-links a.active {
+  background-color: rgba(0, 102, 204, 0.1);
   color: var(--primary);
 }
 
@@ -51,31 +69,27 @@
   display: flex;
   align-items: center;
   gap: 1rem;
-  flex: 1;
-  justify-content: flex-end;
 }
 
 .username {
   color: var(--text);
-  font-weight: 500;
+  font-weight: 600;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .navbar {
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .navbar-brand {
-    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 1rem 1.25rem;
   }
 
   .navbar-links {
+    justify-content: center;
     width: 100%;
-    gap: 1rem;
   }
 
   .navbar-user {
+    justify-content: center;
     width: 100%;
   }
 }

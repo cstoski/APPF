@@ -31,7 +31,7 @@ api.interceptors.response.use(
 )
 
 export const authService = {
-  login: (username, password) => api.post('/auth/token', { username, password }),
+  login: (username, password) => api.post('/api/v1/auth/login', { username, password }),
   ping: () => api.get('/ping'),
 }
 
@@ -40,23 +40,30 @@ export const importService = {
     const formData = new FormData()
     formData.append('arquivo', file)
     formData.append('modo_duplicados', modo_duplicados)
-    return api.post('/dados/importar', formData, {
+    return api.post('/api/v1/dados/importar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
   },
   getPreview: (file) => {
     const formData = new FormData()
     formData.append('arquivo', file)
-    return api.post('/dados/importar/preview-detalhado', formData, {
+    return api.post('/api/v1/dados/importar/preview-detalhado', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
   },
-  aplicarDecisoes: (decisoes, modo_duplicados = 'ATUALIZAR') => 
-    api.post('/dados/importar/aplicar', { decisoes, modo_duplicados }),
+  aplicarDecisoes: (file, decisoes, modo_duplicados = 'ATUALIZAR') => {
+    const formData = new FormData()
+    formData.append('arquivo', file)
+    formData.append('modo_duplicados', modo_duplicados)
+    formData.append('decisoes_json', JSON.stringify(decisoes))
+    return api.post('/api/v1/dados/importar/aplicar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
 }
 
 export const exportService = {
-  exportarContribuintes: () => api.get('/dados/exportar/contribuintes'),
+  exportarContribuintes: () => api.get('/api/v1/dados/exportar/contribuintes'),
 }
 
 export default api

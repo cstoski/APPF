@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { authService } from '../services/api'
 import '../styles/dashboard.css'
 
@@ -21,59 +22,58 @@ export default function DashboardPage() {
     }
 
     checkServer()
-    const interval = setInterval(checkServer, 30000) // A cada 30s
+    const interval = setInterval(checkServer, 30000)
     return () => clearInterval(interval)
   }, [])
 
   return (
     <div className="dashboard">
-      <div className="dashboard-header">
-        <h2>Dashboard</h2>
-        <p>Status e estatísticas da aplicação</p>
+      <div className="dashboard-header section-header">
+        <div>
+          <h2 className="page-title">Resumo do Sistema</h2>
+          <p className="page-description">Acompanhe o status do servidor, importações e principais informações do APPF.</p>
+        </div>
+        <Link to="/importacao" className="btn btn-primary">
+          Ir para importação
+        </Link>
       </div>
 
-      <div className="status-bar">
-        <div className={`status-indicator ${serverStatus}`}>
-          <span className="dot"></span>
-          Servidor: {serverStatus === 'online' ? '🟢 Online' : '🔴 Offline'}
-        </div>
-      </div>
-
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon">👥</div>
-          <div className="stat-content">
-            <h3>Contribuintes</h3>
-            <p className="stat-value">{stats.contribuintes}</p>
+      <div className="dashboard-grid">
+        <section className="card card-strong">
+          <div className="status-block">
+            <span className={`status-badge ${serverStatus}`}></span>
+            <div>
+              <p className="text-muted">Servidor</p>
+              <h3>{serverStatus === 'online' ? 'Online' : 'Offline'}</h3>
+            </div>
           </div>
-        </div>
+          <p className="text-muted">Verificação automática a cada 30 segundos.</p>
+        </section>
 
-        <div className="stat-card">
-          <div className="stat-icon">📥</div>
-          <div className="stat-content">
-            <h3>Importações</h3>
-            <p className="stat-value">{stats.importacoes}</p>
+        <section className="card stats-card">
+          <div className="stat-item">
+            <p className="text-muted">Contribuintes</p>
+            <h3>{stats.contribuintes}</h3>
           </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon">🔐</div>
-          <div className="stat-content">
-            <h3>Usuários</h3>
-            <p className="stat-value">{stats.usuarios}</p>
+          <div className="stat-item">
+            <p className="text-muted">Importações</p>
+            <h3>{stats.importacoes}</h3>
           </div>
-        </div>
-      </div>
+          <div className="stat-item">
+            <p className="text-muted">Usuários</p>
+            <h3>{stats.usuarios}</h3>
+          </div>
+        </section>
 
-      <div className="info-panel">
-        <h3>ℹ️ Informações</h3>
-        <ul>
-          <li>✅ FastAPI + SQLAlchemy</li>
-          <li>✅ React + Vite</li>
-          <li>✅ Autenticação JWT</li>
-          <li>✅ Criptografia de dados LGPD</li>
-          <li>✅ Importação de contribuintes</li>
-        </ul>
+        <section className="card card-strong info-panel">
+          <h3>Visão Geral</h3>
+          <ul>
+            <li>Controle de importação com aprovação por linha.</li>
+            <li>Dados criptografados conforme LGPD.</li>
+            <li>Autenticação JWT para rotas seguras.</li>
+            <li>Fluxo de preview antes de aplicar</li>
+          </ul>
+        </section>
       </div>
     </div>
   )
