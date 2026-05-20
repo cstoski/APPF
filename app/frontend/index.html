@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>APPF • Importação com Aprovação</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">APPF</div>
+      <div>
+        <div class="title">Importação com Aprovação (estilo Excel)</div>
+        <div class="subtitle">Preview → decisão por linha → aplicar (LGPD + Licença + JWT)</div>
+      </div>
+    </div>
+
+    <div class="server-box">
+      <label>Servidor</label>
+      <input id="baseUrl" type="text" value="http://127.0.0.1:8000" />
+      <button class="btn btn-secondary" id="btnPing">Testar</button>
+      <span id="pingStatus" class="badge"></span>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- AUTH -->
+    <section class="card">
+      <div class="card-header">
+        <h2>1) Login</h2>
+        <div class="right">
+          <span class="badge" id="authStatus">Não autenticado</span>
+          <button class="btn btn-secondary" id="btnLogout" disabled>Sair</button>
+        </div>
+      </div>
+
+      <div class="card-body grid-3">
+        <div>
+          <label>Usuário</label>
+          <input id="username" type="text" placeholder="admin" />
+        </div>
+        <div>
+          <label>Senha</label>
+          <input id="password" type="password" placeholder="••••••••" />
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="btnLogin">Entrar</button>
+          <div class="hint">Token fica em <code>sessionStorage</code> (somente nesta aba).</div>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <div id="authMsg" class="msg"></div>
+      </div>
+    </section>
+
+    <!-- LICENÇA (opcional, mas ajuda muito em campo) -->
+    <section class="card">
+      <div class="card-header">
+        <h2>2) Licença da Máquina</h2>
+        <div class="right">
+          <span class="badge" id="licStatus">—</span>
+        </div>
+      </div>
+
+      <div class="card-body grid-3">
+        <div>
+          <label>HWID</label>
+          <input id="hwid" type="text" readonly />
+        </div>
+        <div>
+          <label>Serial</label>
+          <input id="serial" type="text" placeholder="PRO-APPF-2026" />
+        </div>
+        <div class="actions">
+          <button class="btn btn-secondary" id="btnLicencaStatus">Consultar</button>
+          <button class="btn btn-primary" id="btnLicencaAtivar">Ativar</button>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <div id="licMsg" class="msg"></div>
+      </div>
+    </section>
+
+    <!-- IMPORTAÇÃO -->
+    <section class="card">
+      <div class="card-header">
+        <h2>3) Importação com Aprovação</h2>
+        <div class="right">
+          <span class="badge" id="importStatus">Aguardando arquivo</span>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="row">
+          <div class="col">
+            <label>Arquivo (.xlsx ou .csv)</label>
+            <input id="fileInput" type="file" accept=".xlsx,.csv" />
+          </div>
+          <div class="col">
+            <label>Modo padrão para duplicados</label>
+            <select id="modoDuplicados">
+              <option value="PULAR">PULAR (recomendado)</option>
+              <option value="ATUALIZAR">ATUALIZAR (sob demanda)</option>
+            </select>
+          </div>
+          <div class="col actions">
+            <button class="btn btn-secondary" id="btnPreview" disabled>Pré-visualizar</button>
+            <button class="btn btn-primary" id="btnAplicar" disabled>Aplicar</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col">
+            <label>Filtro rápido</label>
+            <input id="filterText" type="text" placeholder="filtrar por nome, cpf (mascarado), status..." />
+          </div>
+          <div class="col actions">
+            <button class="btn btn-secondary" id="btnMarcarNovos" disabled>Marcar NOVOS = IMPORTAR</button>
+            <button class="btn btn-secondary" id="btnMarcarDup" disabled>Marcar DUP = PULAR</button>
+            <button class="btn btn-secondary" id="btnLimparAcoes" disabled>Resetar ações</button>
+          </div>
+        </div>
+
+        <div class="summary" id="summaryBox">
+          <div class="kpi"><span>Total</span><strong id="kpiTotal">0</strong></div>
+          <div class="kpi"><span>Novos</span><strong id="kpiNovos">0</strong></div>
+          <div class="kpi"><span>Duplicados</span><strong id="kpiDuplicados">0</strong></div>
+          <div class="kpi"><span>Inválidos</span><strong id="kpiInvalidos">0</strong></div>
+          <div class="kpi"><span>Sem LGPD</span><strong id="kpiSemLgpd">0</strong></div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="grid-table" id="previewTable">
+            <thead>
+              <tr>
+                <th class="w-80">Linha</th>
+                <th>Nome</th>
+                <th class="w-170">CPF</th>
+                <th class="w-140">Status</th>
+                <th class="w-200">Ação</th>
+                <th>Encontrado no banco</th>
+              </tr>
+            </thead>
+            <tbody id="previewTbody">
+              <tr><td colspan="6" class="empty">Faça login, escolha um arquivo e clique em “Pré-visualizar”.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card-footer">
+          <div id="importMsg" class="msg"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div>
+        Dica: se o backend retornar 403 “Sistema não ativado”, use o painel de licença acima.
+      </div>
+    </footer>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

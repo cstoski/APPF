@@ -5,8 +5,9 @@ from io import BytesIO
 from typing import Tuple, List, Dict, Optional
 
 import pandas as pd
+import re
 
-from app.services.seguranca_service import normalizar_cpf
+from app.services.seguranca_service import normalizar_cpf, mascarar_cpf
 
 
 @dataclass
@@ -109,3 +110,112 @@ def gerar_preview(df: pd.DataFrame, cpfs_existentes: List[str], nomes_existentes
         duplicados=len(duplicados),
         exemplos_duplicados=exemplos,
     )
+    
+
+def gerar_preview_detalhado(df, cpfs_existentes, nomes_existentes):
+    itens = []
+    novos = duplicados = invalidos = sem_consent = 0
+    exemplos_duplicados = []
+
+    cpfs_set = set([c for c in cpfs_existentes if c])
+    nomes_set = set([n for n in nomes_existentes if n])
+
+    cpfs_lote = set()  # ✅ detectar duplicado dentro do próprio arquivo
+
+    for idx, row in df.iterrows():
+        linha = int(idx) + 2
+
+        nome = str(row.get("nome_completo", "")).strip()
+        cpf = normalizar_cpf(str(row.get("cpf", "")))
+        email = str(row.get("email", "")).strip()
+        telefone = str(row.get("telefone", "")).strip()
+        consent = bool(row.get("consentimento_lgpd", False))
+
+        # =========================
+        # VALIDAÇÕES
+        # =========================
+        erros = []
+
+        if not validar_nome(nome):
+            erros.append("Nome inválido")
+
+        if not validar_cpf_simples(cpf):
+            erros.append("CPF inválido")
+
+        if not validar_email(email):
+            erros.append("Email inválido")
+
+        if not validar_telefone(telefone):
+            erros.append("Telefone inválido")
+
+        if not consent:
+            status = "SEM_CONSENTIMENTO"
+            sugestao = "PULAR"
+            sem_consent += 1
+
+        elif erros:
+            status = "INVALIDO"
+            sugestao = "PULAR"
+            invalidos += 1
+
+        elif cpf in cpfs_lote:
+            status = "DUP_ARQUIVO"
+            sugestao = "PULAR"
+            duplicados += 1
+
+        elif cpf in cpfs_set:
+            status = "DUP_CPF"
+            sugestao = "PULAR"
+            duplicados += 1
+
+        elif nome.lower() in nomes_set:
+            status = "DUP_NOME"
+            sugestao = "PULAR"
+            duplicados += 1
+
+        else:
+            status = "NOVO"
+            sugestao = "IMPORTAR"
+            novos += 1
+
+        cpfs_lote.add(cpf)
+
+        itens.append({
+            "linha": linha,
+            "nome_completo": nome,
+            "cpf": cpf,
+            "status": status,
+            "sugestao_acao": sugestao,
+            "erros": erros,  # ✅ novo
+        })
+
+        if "DUP" in status and len(exemplos_duplicados) < 10:
+            exemplos_duplicados.append(f"{nome} | {cpf}")
+
+    return {
+        "total_linhas": len(df),
+        "novos": novos,
+        "duplicados": duplicados,
+        "invalidos": invalidos,
+        "sem_consentimento": sem_consent,
+        "exemplos_duplicados": exemplos_duplicados,
+        "itens": itens,
+    }
+
+
+def validar_email(email: str) -> bool:
+    if not email:
+        return True
+    return re.match(r"[^@]+@[^@]+\.[^@]+", email) is not None
+
+def validar_telefone(tel: str) -> bool:
+    if not tel:
+        return True
+    return len(re.sub(r"\D", "", tel)) >= 8
+
+def validar_nome(nome: str) -> bool:
+    return len(nome.strip()) >= 3
+
+
+def validar_cpf_simples(cpf: str) -> bool:
+    return len(cpf) >= 11

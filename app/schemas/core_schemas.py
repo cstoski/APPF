@@ -6,6 +6,10 @@ from typing import Optional, List, Literal
 from pydantic import BaseModel, Field, ConfigDict
 
 
+ImportStatus = Literal["NOVO", "DUP_CPF", "DUP_NOME", "INVALIDO", "SEM_CONSENTIMENTO"]
+ImportAcao = Literal["IMPORTAR", "ATUALIZAR", "PULAR"]
+
+
 class ContribuinteCreate(BaseModel):
     nome_completo: str = Field(min_length=3, max_length=200)
     cpf: str = Field(min_length=5, max_length=20)
@@ -132,6 +136,25 @@ class ImportacaoAplicarIn(BaseModel):
     """
     aprovar_importacao: bool = True
 
+
+class ImportacaoItemPreview(BaseModel):
+    linha: int
+    nome_completo: str
+    cpf: str
+    status: ImportStatus
+    sugestao_acao: ImportAcao
+    existente_id: Optional[int] = None
+    existente_nome: Optional[str] = None
+    existente_cpf: Optional[str] = None
+
+class ImportacaoPreviewDetalhadoOut(BaseModel):
+    total_linhas: int
+    novos: int
+    duplicados: int
+    invalidos: int
+    sem_consentimento: int
+    exemplos_duplicados: List[str]
+    itens: List[ImportacaoItemPreview]
 
 class ExportacaoOut(BaseModel):
     mensagem: str

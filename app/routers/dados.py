@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from typing import List
+import json
 
 import pandas as pd
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
@@ -11,15 +12,28 @@ from starlette.responses import StreamingResponse
 from app.config.database import get_db
 from app.models.core_models import Contribuinte, Aluno, AlunoResponsavel, Recibo
 from app.models.sys_models import LogsAuditoriaLGPD
-from app.schemas.core_schemas import ImportacaoPreviewOut, ExportacaoOut
-from app.services.importacao_service import ler_planilha, gerar_preview
-from app.services.seguranca_service import decifrar, normalizar_cpf, get_current_username
+from app.schemas.core_schemas import ImportacaoPreviewOut, ExportacaoOut, ImportacaoPreviewDetalhadoOut
+from app.services.importacao_service import ler_planilha, gerar_preview, gerar_preview_detalhado
+from app.services.seguranca_service import (
+    decifrar,
+    normalizar_cpf,
+    mascarar_cpf,
+    get_current_username,
+    cifrar,
+)
 from app.services.licenca_service import require_licenca
 
 router = APIRouter(prefix="/api/v1/dados", tags=["Importação/Exportação"])
 
 
-def _log_lgpd(db: Session, operador: str, acao: str, entidade: str, detalhes: str, quantidade: int | None = None) -> None:
+def _log_lgpd(
+    db: Session,
+    operador: str,
+    acao: str,
+    entidade: str,
+    detalhes: str,
+    quantidade: int | None = None,
+) -> None:
     log = LogsAuditoriaLGPD(
         operador_username=operador,
         acao=acao,
@@ -31,6 +45,9 @@ def _log_lgpd(db: Session, operador: str, acao: str, entidade: str, detalhes: st
     db.commit()
 
 
+# ==========================================================
+# PREVIEW
+# ==========================================================
 @router.post("/importar/preview", response_model=ImportacaoPreviewOut, dependencies=[Depends(require_licenca)])
 def importar_preview(
     arquivo: UploadFile = File(...),
@@ -40,10 +57,11 @@ def importar_preview(
     b = arquivo.file.read()
     df = ler_planilha(b, arquivo.filename or "arquivo.xlsx")
 
-    # CPFs existentes (decifrados)
     existentes = db.query(Contribuinte).all()
+
     cpfs_exist = []
     nomes_exist = []
+
     for c in existentes:
         cpfs_exist.append(normalizar_cpf(decifrar(c.cpf_cifrado) or ""))
         nomes_exist.append(c.nome_completo.strip().lower())
@@ -67,6 +85,187 @@ def importar_preview(
     )
 
 
+# ==========================================================
+# ✅ APLICAR (PASSO 2 COMPLETO)
+# ==========================================================
+@router.post("/importar/aplicar", dependencies=[Depends(require_licenca)])
+def importar_aplicar(
+    arquivo: UploadFile = File(...),
+    modo_duplicados: str = "PULAR",  # PULAR | ATUALIZAR
+    decisoes_json: str | None = None,
+    db: Session = Depends(get_db),
+    operador: str = Depends(get_current_username),
+):
+    b = arquivo.file.read()
+    df = ler_planilha(b, arquivo.filename or "arquivo.xlsx")
+
+    existentes = db.query(Contribuinte).all()
+
+    mapa_cpf = {}
+    mapa_nome = {}
+
+    for c in existentes:
+        cpf_dec = normalizar_cpf(decifrar(c.cpf_cifrado) or "")
+        if cpf_dec:
+            mapa_cpf[cpf_dec] = c
+
+        nome_norm = c.nome_completo.strip().lower()
+        mapa_nome[nome_norm] = c
+
+    decisoes = {}
+    if decisoes_json:
+        try:
+            raw = json.loads(decisoes_json)
+            for d in raw:
+                linha = int(d["linha"])
+                decisoes[linha] = d["acao"]
+        except Exception:
+            raise HTTPException(status_code=400, detail="decisoes_json inválido")
+
+    importados = 0
+    atualizados = 0
+    pulados = 0
+    sem_consentimento = 0
+
+    for idx, row in df.iterrows():
+        linha = idx + 2
+
+        nome = str(row.get("nome_completo", "")).strip()
+        cpf = normalizar_cpf(str(row.get("cpf", "")))
+        email = str(row.get("email", "")).strip()
+        telefone = str(row.get("telefone", "")).strip()
+        observacoes = str(row.get("observacoes", "")).strip()
+        consentimento = bool(row.get("consentimento_lgpd", False))
+
+        if not consentimento:
+            sem_consentimento += 1
+            continue
+
+        existente = None
+
+        if cpf and cpf in mapa_cpf:
+            existente = mapa_cpf[cpf]
+            status = "DUP_CPF"
+        elif nome.lower() in mapa_nome:
+            existente = mapa_nome[nome.lower()]
+            status = "DUP_NOME"
+        else:
+            status = "NOVO"
+
+        acao = decisoes.get(linha)
+
+        if not acao:
+            if status == "NOVO":
+                acao = "IMPORTAR"
+            else:
+                acao = "ATUALIZAR" if modo_duplicados == "ATUALIZAR" else "PULAR"
+
+        # ===== EXECUÇÃO =====
+
+        if acao == "PULAR":
+            pulados += 1
+            continue
+
+        if acao == "IMPORTAR":
+            if existente:
+                pulados += 1
+                continue
+
+            novo = Contribuinte(
+                nome_completo=nome,
+                cpf_cifrado=cifrar(cpf),
+                email_cifrado=cifrar(email) if email else None,
+                telefone_cifrado=cifrar(telefone) if telefone else None,
+                consentimento_lgpd=True,
+                observacoes=observacoes or None,
+            )
+            db.add(novo)
+            importados += 1
+            continue
+
+        if acao == "ATUALIZAR":
+            if not existente:
+                novo = Contribuinte(
+                    nome_completo=nome,
+                    cpf_cifrado=cifrar(cpf),
+                    email_cifrado=cifrar(email) if email else None,
+                    telefone_cifrado=cifrar(telefone) if telefone else None,
+                    consentimento_lgpd=True,
+                )
+                db.add(novo)
+                importados += 1
+                continue
+
+            existente.nome_completo = nome
+
+            if email:
+                existente.email_cifrado = cifrar(email)
+            if telefone:
+                existente.telefone_cifrado = cifrar(telefone)
+            if observacoes:
+                existente.observacoes = observacoes
+
+            existente.consentimento_lgpd = True
+            atualizados += 1
+            continue
+
+    db.commit()
+
+    _log_lgpd(
+        db,
+        operador,
+        acao="IMPORTACAO_CONTRIBUINTES_APLICADA",
+        entidade="Contribuintes",
+        detalhes=f"Importação arquivo={arquivo.filename} modo={modo_duplicados}",
+        quantidade=importados + atualizados,
+    )
+
+    return {
+        "importados": importados,
+        "atualizados": atualizados,
+        "pulados": pulados,
+        "sem_consentimento": sem_consentimento,
+    }
+
+
+@router.post(
+    "/importar/preview-detalhado",
+    response_model=ImportacaoPreviewDetalhadoOut,
+    dependencies=[Depends(require_licenca)],
+)
+def importar_preview_detalhado(
+    arquivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    operador: str = Depends(get_current_username),
+) -> ImportacaoPreviewDetalhadoOut:
+    b = arquivo.file.read()
+    df = ler_planilha(b, arquivo.filename or "arquivo.xlsx")
+
+    existentes = db.query(Contribuinte).all()
+    cpfs_exist = []
+    nomes_exist = []
+
+    for c in existentes:
+        cpfs_exist.append(normalizar_cpf(decifrar(c.cpf_cifrado) or ""))
+        nomes_exist.append(c.nome_completo.strip().lower())
+
+    payload = gerar_preview_detalhado(df, cpfs_exist, nomes_exist)
+
+    _log_lgpd(
+        db,
+        operador,
+        acao="LEITURA_LOTE_IMPORTACAO_PREVIEW_DETALHADO",
+        entidade="Contribuintes",
+        detalhes="Preview detalhado importação",
+        quantidade=payload["total_linhas"],
+    )
+
+    return ImportacaoPreviewDetalhadoOut(**payload)
+
+
+# ==========================================================
+# EXPORTAÇÕES
+# ==========================================================
 @router.get("/exportar/contribuintes", dependencies=[Depends(require_licenca)])
 def exportar_contribuintes(
     db: Session = Depends(get_db),
@@ -74,13 +273,12 @@ def exportar_contribuintes(
 ):
     contribs = db.query(Contribuinte).order_by(Contribuinte.id.asc()).all()
 
-    # LOG LGPD
     _log_lgpd(
         db,
         operador,
         acao="EXPORTACAO_CONTRIBUINTES",
         entidade="Contribuintes",
-        detalhes="Exportação de contribuintes (decifrando CPF/email/telefone em tempo real)",
+        detalhes="Exportação de contribuintes",
         quantidade=len(contribs),
     )
 
@@ -107,50 +305,9 @@ def exportar_contribuintes(
     output.seek(0)
 
     headers = {"Content-Disposition": 'attachment; filename="contribuintes.xlsx"'}
-    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
 
-
-@router.get("/exportar/vinculos", dependencies=[Depends(require_licenca)])
-def exportar_vinculos(
-    db: Session = Depends(get_db),
-    operador: str = Depends(get_current_username),
-):
-    vincs = db.query(AlunoResponsavel).order_by(AlunoResponsavel.id.asc()).all()
-
-    _log_lgpd(
-        db,
-        operador,
-        acao="EXPORTACAO_VINCULOS",
-        entidade="AlunosResponsaveis",
-        detalhes="Exportação de vínculos aluno-responsável",
-        quantidade=len(vincs),
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
     )
-
-    rows = []
-    for v in vincs:
-        aluno = db.query(Aluno).filter(Aluno.id == v.aluno_id).first()
-        resp = db.query(Contribuinte).filter(Contribuinte.id == v.contribuinte_id).first()
-        rows.append(
-            {
-                "vinculo_id": v.id,
-                "aluno_id": v.aluno_id,
-                "aluno_nome": aluno.nome_completo if aluno else "",
-                "matricula": aluno.matricula if aluno else "",
-                "turma": aluno.turma if aluno else "",
-                "contribuinte_id": v.contribuinte_id,
-                "contribuinte_nome": resp.nome_completo if resp else "",
-                "cpf_responsavel": (decifrar(resp.cpf_cifrado) if resp else ""),
-                "parentesco": v.parentesco or "",
-                "data_criacao": v.data_criacao.strftime("%d/%m/%Y %H:%M:%S"),
-                "data_alteracao": v.data_alteracao.strftime("%d/%m/%Y %H:%M:%S"),
-            }
-        )
-
-    df = pd.DataFrame(rows)
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Vinculos")
-    output.seek(0)
-
-    headers = {"Content-Disposition": 'attachment; filename="vinculos.xlsx"'}
-    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
