@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
@@ -43,6 +43,31 @@ def _inicio_proximo_mes_utc(ano: int, mes: int) -> datetime:
 
 def _inicio_proximo_ano_utc(ano: int) -> datetime:
     return datetime(ano + 1, 1, 1)
+
+
+def _totais_recibos_ano_agrupado(db: Session, ano: int) -> dict[int, tuple[float, int]]:
+    """Uma consulta SQL para os 12 meses do ano (em vez de 12 idas ao banco)."""
+    ini = _inicio_mes_utc(ano, 1)
+    fim = _inicio_proximo_ano_utc(ano)
+    rows = db.execute(
+        text(
+            """
+            SELECT CAST(strftime('%m', data_contribuicao) AS INTEGER) AS mes,
+                   COUNT(id),
+                   COALESCE(SUM(valor), 0)
+            FROM recibos
+            WHERE cancelado = 0
+              AND data_contribuicao >= :ini
+              AND data_contribuicao < :fim
+            GROUP BY mes
+            """
+        ),
+        {"ini": ini, "fim": fim},
+    ).fetchall()
+    out: dict[int, tuple[float, int]] = {}
+    for mes, qtd, val in rows:
+        out[int(mes)] = (float(val or 0), int(qtd or 0))
+    return out
 
 
 def _totais_recibos_mes(db: Session, a: int, m: int) -> tuple[float, int]:
@@ -111,9 +136,10 @@ def _montar_resumo_dashboard(db: Session, ano: int, mes: int) -> DashboardResumo
     valor_ano = float(row_ano[1] or 0.0)
 
     v_dec_ant, q_dec_ant = _totais_recibos_mes(db, ano - 1, 12)
+    por_mes = _totais_recibos_ano_agrupado(db, ano)
     mes_a_mes: list[DashboardMesContribOut] = []
     for mnum in range(1, 13):
-        val_m, qtd_m = _totais_recibos_mes(db, ano, mnum)
+        val_m, qtd_m = por_mes.get(mnum, (0.0, 0))
         nome = _MESES_PT[mnum]
         label_fmt = nome[0].upper() + nome[1:] if nome else ""
         mes_a_mes.append(

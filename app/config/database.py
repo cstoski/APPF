@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Generator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 
 from app.runtime_paths import get_data_dir
@@ -17,6 +17,19 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     future=True,
 )
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+    """Acelera leituras/gravações locais no SQLite."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA cache_size=-64000")
+    cursor.execute("PRAGMA temp_store=MEMORY")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
@@ -108,6 +121,71 @@ def _migrate_contribuintes_excluido() -> None:
             text(
                 "CREATE INDEX IF NOT EXISTS ix_contribuintes_excluido "
                 "ON contribuintes (excluido)"
+            )
+        )
+
+
+def _migrate_contribuintes_busca() -> None:
+    """Colunas indexadas para busca/unicidade sem descriptografar todos os registros."""
+    from app.models.core_models import Contribuinte
+    from app.services.contribuinte_busca_service import hash_cpf_busca, normalizar_nome_busca
+    from app.services.seguranca_service import decifrar, normalizar_cpf
+
+    with engine.connect() as conn:
+        exists = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='contribuintes'")
+        ).fetchone()
+        if not exists:
+            return
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(contribuintes)")).fetchall()}
+
+    with engine.begin() as conn:
+        if "cpf_busca_hash" not in cols:
+            conn.execute(
+                text("ALTER TABLE contribuintes ADD COLUMN cpf_busca_hash VARCHAR(64)")
+            )
+        if "nome_normalizado" not in cols:
+            conn.execute(
+                text("ALTER TABLE contribuintes ADD COLUMN nome_normalizado VARCHAR(200)")
+            )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_contribuintes_cpf_busca_hash "
+                "ON contribuintes (cpf_busca_hash)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_contribuintes_nome_normalizado "
+                "ON contribuintes (nome_normalizado)"
+            )
+        )
+
+    with SessionLocal() as db:
+        pendentes = db.query(Contribuinte).filter(Contribuinte.nome_normalizado.is_(None)).all()
+        if not pendentes:
+            return
+        for c in pendentes:
+            if c.cpf_cifrado and not c.cpf_busca_hash:
+                cpf_norm = normalizar_cpf(decifrar(c.cpf_cifrado) or "")
+                c.cpf_busca_hash = hash_cpf_busca(cpf_norm)
+            if not c.nome_normalizado and c.nome_completo:
+                c.nome_normalizado = normalizar_nome_busca(c.nome_completo)
+        db.commit()
+
+
+def _migrate_recibos_indices() -> None:
+    with engine.connect() as conn:
+        exists = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='recibos'")
+        ).fetchone()
+        if not exists:
+            return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_recibos_cancelado_data "
+                "ON recibos (cancelado, data_contribuicao)"
             )
         )
 
@@ -294,6 +372,8 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _migrate_contribuintes_cpf_opcional()
     _migrate_contribuintes_excluido()
+    _migrate_contribuintes_busca()
+    _migrate_recibos_indices()
     _migrate_config_appf_smtp()
     _migrate_licencas_data_expiracao()
     _migrate_licencas_emissao_serial()

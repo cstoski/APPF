@@ -47,6 +47,10 @@ class Contribuinte(Base, TimestampMixin):
 
     excluido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
+    # Índices de busca/unicidade sem descriptografar o lote inteiro
+    cpf_busca_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    nome_normalizado: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, index=True)
+
     recibos: Mapped[List["Recibo"]] = relationship(
         back_populates="contribuinte", cascade="save-update"
     )
@@ -57,6 +61,7 @@ class Recibo(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("numero", name="uq_numero_recibo"),
         Index("ix_recibos_contribuinte_data", "contribuinte_id", "data_contribuicao"),
+        Index("ix_recibos_cancelado_data", "cancelado", "data_contribuicao"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

@@ -42,6 +42,7 @@ from app.services.email_service import (
 )
 from app.services.recibo_texto_service import gerar_texto_corpo_recibo
 from app.services.smtp_config_service import obter_smtp_da_config, validar_smtp_configurado
+from app.services.contribuinte_busca_service import hash_cpf_busca, normalizar_nome_busca
 from app.services.contribuinte_log_service import (
     log_inclusao,
     log_alteracao,
@@ -145,26 +146,27 @@ def _validar_data_contribuicao(d: date) -> None:
 
 
 def _validar_cpf_unico(db: Session, cpf_norm: str, ignorar_id: int | None = None) -> None:
-    """Compara CPF descriptografado — o cifrado Fernet muda a cada gravação."""
     if not cpf_norm:
         return
-    q = _apenas_ativos(db.query(Contribuinte)).filter(Contribuinte.cpf_cifrado.isnot(None))
+    h = hash_cpf_busca(cpf_norm)
+    if not h:
+        return
+    q = _apenas_ativos(db.query(Contribuinte)).filter(Contribuinte.cpf_busca_hash == h)
     if ignorar_id is not None:
         q = q.filter(Contribuinte.id != ignorar_id)
-    for existente in q.all():
-        cpf_existente = normalizar_cpf(decifrar(existente.cpf_cifrado) or "")
-        if cpf_existente and cpf_existente == cpf_norm:
-            raise HTTPException(status_code=400, detail="CPF já cadastrado.")
+    if q.first():
+        raise HTTPException(status_code=400, detail="CPF já cadastrado.")
 
 
 def _validar_nome_unico(db: Session, nome: str, ignorar_id: int | None = None) -> None:
-    alvo = _normalizar_nome(nome)
-    q = _apenas_ativos(db.query(Contribuinte))
+    alvo = normalizar_nome_busca(nome)
+    if not alvo:
+        return
+    q = _apenas_ativos(db.query(Contribuinte)).filter(Contribuinte.nome_normalizado == alvo)
     if ignorar_id is not None:
         q = q.filter(Contribuinte.id != ignorar_id)
-    for existente in q.all():
-        if _normalizar_nome(existente.nome_completo) == alvo:
-            raise HTTPException(status_code=400, detail="Nome já cadastrado.")
+    if q.first():
+        raise HTTPException(status_code=400, detail="Nome já cadastrado.")
 
 
 def _validar_duplicatas_contribuinte(
@@ -205,7 +207,9 @@ def _aplicar_dados_contribuinte(c: Contribuinte, data: ContribuinteCreate | Cont
             detail="CPF inválido. Informe 11 dígitos ou deixe em branco.",
         )
     c.nome_completo = data.nome_completo.strip()
+    c.nome_normalizado = normalizar_nome_busca(c.nome_completo)
     c.cpf_cifrado = cifrar(cpf_norm) if cpf_norm else None
+    c.cpf_busca_hash = hash_cpf_busca(cpf_norm)
     c.email_cifrado = cifrar(data.email) if data.email else None
     c.telefone_cifrado = cifrar(data.telefone) if data.telefone else None
     c.observacoes = data.observacoes.strip() if data.observacoes else None
@@ -241,26 +245,17 @@ def buscar_contribuintes(termo: str, db: Session = Depends(get_db)) -> List[Cont
 
     digits = normalizar_cpf(t)
 
-    if not candidatos and digits:
-        candidatos = _apenas_ativos(db.query(Contribuinte)).limit(2000).all()
+    if not candidatos and digits and len(digits) == 11:
+        h = hash_cpf_busca(digits)
+        if h:
+            candidatos = (
+                _apenas_ativos(db.query(Contribuinte))
+                .filter(Contribuinte.cpf_busca_hash == h)
+                .limit(5)
+                .all()
+            )
 
-    resultados: List[ContribuinteBuscaOut] = []
-    for c in candidatos:
-        cpf_real = decifrar(c.cpf_cifrado) if c.cpf_cifrado else ""
-        cpf_norm = normalizar_cpf(cpf_real)
-
-        email_real = decifrar(c.email_cifrado) if c.email_cifrado else ""
-        tel_real = decifrar(c.telefone_cifrado) if c.telefone_cifrado else ""
-
-        match_nome = t.lower() in c.nome_completo.lower()
-        match_cpf = bool(digits) and digits in cpf_norm
-        match_email = bool(email_real) and t.lower() in email_real.lower()
-        match_tel = bool(tel_real) and t in tel_real
-
-        if match_nome or match_cpf or match_email or match_tel:
-            resultados.append(_contribuinte_para_busca(c))
-
-    return resultados
+    return [_contribuinte_para_busca(c) for c in candidatos[:30]]
 
 
 @router.get(

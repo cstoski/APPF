@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 from datetime import date, datetime, timedelta
@@ -51,6 +52,10 @@ class EstadoLicenca:
     aviso_expiracao: bool
     tipo_licenca: str = "PRODUCAO"
     demo_consumido: bool = False
+
+
+_LICENCA_CACHE: tuple[float, "EstadoLicenca"] | None = None
+_LICENCA_CACHE_TTL_SEC = 45.0
 
 
 @lru_cache(maxsize=1)
@@ -230,6 +235,7 @@ def ativar_licenca(db: Session, serial: str, operador: str = "sistema") -> str:
         serial_mascarado=mascarar_serial(serial_armazenar),
         detalhes=f"expira={expira.date().isoformat()}",
     )
+    invalidar_cache_licenca()
     return hwid
 
 
@@ -408,23 +414,37 @@ def _erro_licenca(estado: EstadoLicenca, escrita: bool) -> HTTPException:
     return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
 
-def verificar_licenca_leitura(db: Session) -> EstadoLicenca:
+def _estado_licenca_cached(db: Session) -> EstadoLicenca:
+    global _LICENCA_CACHE
+    agora = time.time()
+    if _LICENCA_CACHE and agora - _LICENCA_CACHE[0] < _LICENCA_CACHE_TTL_SEC:
+        return _LICENCA_CACHE[1]
     estado = _avaliar_estado(status_licenca(db), obter_hwid_windows())
+    _LICENCA_CACHE = (agora, estado)
+    return estado
+
+
+def invalidar_cache_licenca() -> None:
+    global _LICENCA_CACHE
+    _LICENCA_CACHE = None
+
+
+def verificar_licenca_leitura(db: Session) -> EstadoLicenca:
+    estado = _estado_licenca_cached(db)
     if not estado.pode_leitura:
         raise _erro_licenca(estado, escrita=False)
     return estado
 
 
 def verificar_licenca_escrita(db: Session) -> EstadoLicenca:
-    estado = _avaliar_estado(status_licenca(db), obter_hwid_windows())
+    estado = _estado_licenca_cached(db)
     if not estado.pode_escrita:
         raise _erro_licenca(estado, escrita=True)
     return estado
 
 
 def licenca_operacional(db: Session) -> bool:
-    estado = _avaliar_estado(status_licenca(db), obter_hwid_windows())
-    return estado.pode_escrita
+    return _estado_licenca_cached(db).pode_escrita
 
 
 def require_licenca(db: Session = Depends(get_db)) -> None:

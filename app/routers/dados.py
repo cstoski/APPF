@@ -13,6 +13,7 @@ from app.config.database import get_db
 from app.models.core_models import Contribuinte, Recibo
 from app.models.sys_models import LogsAuditoriaLGPD
 from app.schemas.core_schemas import ImportacaoPreviewOut, ExportacaoOut, ImportacaoPreviewDetalhadoOut
+from app.services.contribuinte_busca_service import hash_cpf_busca, normalizar_nome_busca
 from app.services.importacao_service import (
     ler_planilha,
     gerar_preview,
@@ -65,14 +66,10 @@ def importar_preview(
 
     existentes = db.query(Contribuinte).filter(Contribuinte.excluido.is_(False)).all()
 
-    cpfs_exist = []
-    nomes_exist = []
+    cpfs_exist = [c.cpf_busca_hash or "" for c in existentes if c.cpf_busca_hash]
+    nomes_exist = [c.nome_normalizado or normalizar_nome_busca(c.nome_completo) for c in existentes]
 
-    for c in existentes:
-        cpfs_exist.append(normalizar_cpf(decifrar(c.cpf_cifrado) or ""))
-        nomes_exist.append(normalizar_nome(c.nome_completo))
-
-    prev = gerar_preview(df, cpfs_exist, nomes_exist)
+    prev = gerar_preview(df, cpfs_exist, nomes_exist, usar_hash_cpf=True)
 
     _log_lgpd(
         db,
@@ -111,11 +108,9 @@ def importar_aplicar(
     mapa_nome = {}
 
     for c in existentes:
-        cpf_dec = normalizar_cpf(decifrar(c.cpf_cifrado) or "")
-        if cpf_dec:
-            mapa_cpf[cpf_dec] = c
-
-        nome_norm = normalizar_nome(c.nome_completo)
+        if c.cpf_busca_hash:
+            mapa_cpf[c.cpf_busca_hash] = c
+        nome_norm = c.nome_normalizado or normalizar_nome_busca(c.nome_completo)
         mapa_nome[nome_norm] = c
 
     decisoes: dict[int, str] = {}
@@ -157,11 +152,12 @@ def importar_aplicar(
             pulados += 1
             continue
 
-        nome_norm = normalizar_nome(nome)
+        nome_norm = normalizar_nome_busca(nome)
         existente = None
+        cpf_hash = hash_cpf_busca(cpf) if cpf else None
 
-        if cpf and cpf in mapa_cpf:
-            existente = mapa_cpf[cpf]
+        if cpf_hash and cpf_hash in mapa_cpf:
+            existente = mapa_cpf[cpf_hash]
         elif nome_norm in mapa_nome:
             existente = mapa_nome[nome_norm]
 
@@ -183,7 +179,9 @@ def importar_aplicar(
 
             novo = Contribuinte(
                 nome_completo=nome,
+                nome_normalizado=nome_norm,
                 cpf_cifrado=cifrar(cpf) if cpf else None,
+                cpf_busca_hash=cpf_hash,
                 email_cifrado=cifrar(email) if email else None,
                 telefone_cifrado=cifrar(telefone) if telefone else None,
                 consentimento_lgpd=True,
@@ -192,8 +190,8 @@ def importar_aplicar(
             db.add(novo)
             db.flush()
             log_inclusao(operador, novo)
-            if cpf:
-                mapa_cpf[cpf] = novo
+            if cpf_hash:
+                mapa_cpf[cpf_hash] = novo
             mapa_nome[nome_norm] = novo
             importados += 1
             continue
@@ -202,7 +200,9 @@ def importar_aplicar(
             if not existente:
                 novo = Contribuinte(
                     nome_completo=nome,
+                    nome_normalizado=nome_norm,
                     cpf_cifrado=cifrar(cpf) if cpf else None,
+                    cpf_busca_hash=cpf_hash,
                     email_cifrado=cifrar(email) if email else None,
                     telefone_cifrado=cifrar(telefone) if telefone else None,
                     consentimento_lgpd=True,
@@ -211,15 +211,17 @@ def importar_aplicar(
                 db.add(novo)
                 db.flush()
                 log_inclusao(operador, novo)
-                if cpf:
-                    mapa_cpf[cpf] = novo
+                if cpf_hash:
+                    mapa_cpf[cpf_hash] = novo
                 mapa_nome[nome_norm] = novo
                 importados += 1
                 continue
 
             existente.nome_completo = nome
+            existente.nome_normalizado = nome_norm
             if cpf:
                 existente.cpf_cifrado = cifrar(cpf)
+                existente.cpf_busca_hash = cpf_hash
             if email:
                 existente.email_cifrado = cifrar(email)
             elif email == "":
@@ -267,14 +269,10 @@ def importar_preview_detalhado(
     df = ler_planilha(b, arquivo.filename or "arquivo.xlsx")
 
     existentes = db.query(Contribuinte).filter(Contribuinte.excluido.is_(False)).all()
-    cpfs_exist = []
-    nomes_exist = []
+    cpfs_exist = [c.cpf_busca_hash or "" for c in existentes if c.cpf_busca_hash]
+    nomes_exist = [c.nome_normalizado or normalizar_nome_busca(c.nome_completo) for c in existentes]
 
-    for c in existentes:
-        cpfs_exist.append(normalizar_cpf(decifrar(c.cpf_cifrado) or ""))
-        nomes_exist.append(normalizar_nome(c.nome_completo))
-
-    payload = gerar_preview_detalhado(df, cpfs_exist, nomes_exist)
+    payload = gerar_preview_detalhado(df, cpfs_exist, nomes_exist, usar_hash_cpf=True)
 
     _log_lgpd(
         db,
