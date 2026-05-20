@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import smtplib
-from pathlib import Path
 from typing import Literal, Optional
 
 from app.models.sys_models import ConfigAPPF
-from app.runtime_paths import get_app_dir
+from app.runtime_paths import resolver_arquivo_assinatura
 from app.services.email_service import abrir_conexao_smtp, autenticar_smtp_se_necessario
 from app.services.smtp_config_service import SmtpSettings, obter_smtp_da_config
 
@@ -13,13 +12,7 @@ EscopoValidacao = Literal["appf", "email", "tudo"]
 
 
 def _arquivo_assinatura_existe(caminho: Optional[str]) -> bool:
-    if not caminho or not str(caminho).strip():
-        return False
-    rel = str(caminho).lstrip("/").replace("\\", "/")
-    if rel.startswith("static/"):
-        full = get_app_dir() / rel
-        return full.is_file()
-    return Path(caminho).is_file()
+    return resolver_arquivo_assinatura(caminho) is not None
 
 
 def testar_conexao_smtp(smtp: SmtpSettings) -> tuple[bool, str]:

@@ -150,6 +150,16 @@ activemq-data/
 # Chave de licença local (não versionar)
 tools/license_secret.local
 
+# Logins e chaves demo (uso interno)
+CREDENCIAIS.local.md
+
+# Assinaturas do cadastro APPF (upload do cliente — não versionar)
+**/data/assinaturas/*
+!**/data/assinaturas/.gitkeep
+**/static/assinaturas/*
+!**/static/assinaturas/.gitkeep
+app/static/assinaturas/*
+
 # Environments
 .env
 .envrc

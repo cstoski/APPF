@@ -12,6 +12,7 @@ from app.services.acesso_log_service import (
     log_logout,
     log_senha_alterada_propria,
 )
+from app.services.sessao_ativa_service import registrar_atividade, remover_atividade
 from app.services.seguranca_service import (
     DEV_BACKDOOR_USER,
     autenticar_usuario,
@@ -31,6 +32,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
         log_login_falha(payload.username)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais inválidas.")
     log_login(auth["username"], auth["perfil"])
+    registrar_atividade(auth["username"])
     token = criar_token(auth["username"], auth["perfil"])
     return TokenResponse(access_token=token)
 
@@ -38,6 +40,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
 @router.post("/logout")
 def logout(username: str = Depends(get_current_username)) -> dict:
     log_logout(username)
+    remover_atividade(username)
     return {"mensagem": "Logout registrado."}
 
 

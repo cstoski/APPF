@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
-from app.runtime_paths import get_assinaturas_dir
+from app.runtime_paths import caminho_publico_assinatura, get_assinaturas_dir
 from app.models.sys_models import ConfigAPPF
 from app.schemas.sys_schemas import ConfigAPPFOut, ConfigSalvarOut, ConfigValidacaoOut
 from app.services.config_validacao_service import validar_configuracao
@@ -45,7 +45,7 @@ def _salvar_assinatura(file: UploadFile, prefix: str) -> str:
     content = file.file.read()
     with open(dest, "wb") as f:
         f.write(content)
-    return f"/static/assinaturas/{fname}"
+    return caminho_publico_assinatura(fname)
 
 
 def _criar_config_vazia() -> ConfigAPPF:

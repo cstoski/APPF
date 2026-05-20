@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config.database import init_db, seed_admin_if_needed
 
-from app.runtime_paths import get_frontend_dist_dir, get_static_dir
+from app.runtime_paths import get_assinaturas_dir, get_frontend_dist_dir
 
 from app.routers import (
 
@@ -38,15 +38,13 @@ from app.routers import (
 
     dashboard_router,
 
+    desktop_router,
+
 )
 
 
 
-STATIC_DIR = get_static_dir()
-
-ASSIN_DIR = STATIC_DIR / "assinaturas"
-
-ASSIN_DIR.mkdir(parents=True, exist_ok=True)
+ASSIN_DIR = get_assinaturas_dir()
 
 
 
@@ -76,7 +74,11 @@ app.add_middleware(
 
 
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount(
+    "/static/assinaturas",
+    StaticFiles(directory=str(ASSIN_DIR)),
+    name="assinaturas",
+)
 
 
 
@@ -95,6 +97,28 @@ app.include_router(relatorios_router)
 app.include_router(sistema_router)
 
 app.include_router(dashboard_router)
+
+app.include_router(desktop_router)
+
+
+@app.middleware("http")
+async def rastrear_usuarios_ativos(request: Request, call_next):
+    from app.services.seguranca_service import decodificar_token
+    from app.services.sessao_ativa_service import registrar_atividade
+
+    response = await call_next(request)
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if token:
+            try:
+                payload = decodificar_token(token)
+                sub = payload.get("sub")
+                if sub:
+                    registrar_atividade(str(sub))
+            except HTTPException:
+                pass
+    return response
 
 
 

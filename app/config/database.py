@@ -239,17 +239,10 @@ def _migrate_recibos_instituicao() -> None:
 
 def _migrate_limpar_assinaturas_inexistentes() -> None:
     """Remove referências a arquivos de assinatura que não existem mais no disco."""
-    from app.runtime_paths import get_assinaturas_dir
+    from app.runtime_paths import resolver_arquivo_assinatura
 
     def _existe(caminho: str | None) -> bool:
-        if not (caminho or "").strip():
-            return False
-        rel = caminho.strip().replace("\\", "/")
-        if rel.startswith("/static/assinaturas/"):
-            rel = rel[len("/static/assinaturas/") :]
-        elif rel.startswith("static/assinaturas/"):
-            rel = rel[len("static/assinaturas/") :]
-        return (get_assinaturas_dir() / rel).is_file()
+        return resolver_arquivo_assinatura(caminho) is not None
 
     with engine.connect() as conn:
         exists = conn.execute(
@@ -306,6 +299,9 @@ def init_db() -> None:
     _migrate_licencas_emissao_serial()
     _migrate_licencas_tipo_demo()
     _migrate_recibos_instituicao()
+    from app.runtime_paths import migrar_assinaturas_legadas
+
+    migrar_assinaturas_legadas()
     _migrate_limpar_assinaturas_inexistentes()
 
 
