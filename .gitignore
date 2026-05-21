@@ -147,11 +147,41 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# =============================================================================
+# ZELO / APPF — projeto local
+# =============================================================================
+
 # Chave de licença local (não versionar)
 tools/license_secret.local
 
-# Logins e chaves demo (uso interno)
+# Logins, senhas e chaves demo (uso interno)
 CREDENCIAIS.local.md
+*.local.md
+
+# Variáveis de ambiente locais
+.env.local
+.env.*.local
+
+# Node.js / Vite (frontend)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+**/.vite/
+
+# Build desktop (PyInstaller + Inno Setup)
+# build/ e dist/ já ignorados acima; ícone gerado em build/setup.ico
+
+# Inno Setup instalador baixado manualmente (não versionar)
+innosetup*.exe
+
+# Banco SQLite e logs de desenvolvimento (app/data em modo dev)
+app/data/logs/
+app/data/*.sqlite3
+app/data/*.sqlite3-wal
+app/data/*.sqlite3-shm
+
+# Pasta data de runtime (cópia local da instalação C:\ZELO\data, se existir no repo)
+/data/
 
 # Assinaturas do cadastro APPF (upload do cliente — não versionar)
 **/data/assinaturas/*
@@ -159,6 +189,23 @@ CREDENCIAIS.local.md
 **/static/assinaturas/*
 !**/static/assinaturas/.gitkeep
 app/static/assinaturas/*
+
+# Frontend legado empacotado no app (gerado por npm run build)
+app/frontend/
+
+# Logs do ZELO
+**/data/logs/
+zelo.log
+
+# IDE / editor
+.idea/
+.vscode/
+.cursor/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 
 # Environments
 .env

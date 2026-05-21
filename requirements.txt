@@ -1,13 +1,24 @@
-fastapi==0.115.0
-uvicorn==0.30.6
-sqlalchemy>=2.0.36
+# ZELO / APPF — dependências Python (runtime)
+# Python 3.11+
+
+# API HTTP
+fastapi>=0.115.0,<0.137
+uvicorn[standard]>=0.30.6,<0.48
+python-multipart>=0.0.9,<0.1
+
+# Validação e banco de dados
 pydantic>=2.10,<3
-pandas>=3.0
-openpyxl==3.1.5
-cryptography==43.0.1
-passlib==1.7.4
-python-jose==3.3.0
-bcrypt==4.2.0
-python-multipart==0.0.9
-pystray>=0.19.5
-Pillow>=10.0.0
+sqlalchemy>=2.0.36,<2.1
+
+# Importação e exportação (Excel)
+pandas>=2.2,<3.1
+openpyxl>=3.1.5,<4
+
+# Segurança — JWT, cifragem LGPD, hash de senha
+cryptography>=43.0.1,<50
+python-jose[cryptography]>=3.3.0,<4
+bcrypt>=4.2.0,<6
+
+# Desktop Windows (bandeja do sistema e geração de ícone)
+pystray>=0.19.5,<0.20
+Pillow>=10.0.0,<13
